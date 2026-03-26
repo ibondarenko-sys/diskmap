@@ -1490,16 +1490,6 @@ function buildQRSvg(url, diskName) {
     }
   }
 
-  // логомарк в центрі
-  const logoSize = cell * 7;
-  const logoCx = totalW / 2;
-  const logoCy = totalH / 2;
-
-  // білий буфер навколо лого
-  const buf = 4;
-  svg += `<rect x="${logoCx - logoSize/2 - buf}" y="${logoCy - logoSize/2 - buf}" width="${logoSize + buf*2}" height="${logoSize + buf*2}" rx="${logoSize*0.1}" fill="white"/>`;
-  svg += drawLogomark(logoCx, logoCy, logoSize);
-
   svg += `</svg>`;
   return svg;
 }
