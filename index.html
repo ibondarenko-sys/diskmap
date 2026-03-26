@@ -527,6 +527,22 @@ body::before {
 }
 .search-more:hover { background: var(--accent-dim); }
 
+.more-menu-wrap { position: relative; }
+.more-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 300;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r); box-shadow: var(--shadow); min-width: 160px;
+  overflow: hidden;
+}
+.more-menu.open { display: block; animation: fadeUp 0.15s ease; }
+.more-menu-item {
+  padding: 10px 14px; font-size: 12px; color: var(--text2);
+  cursor: pointer; transition: background 0.1s;
+}
+.more-menu-item:hover { background: var(--surface2); color: var(--text); }
+.more-menu-item.danger { color: var(--red); }
+.more-menu-item.danger:hover { background: var(--red-dim); }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1159,8 +1175,13 @@ function renderDetail(id) {
       '<div class="detail-actions">' +
         '<button class="btn btn-primary btn-sm" onclick="openUpdateModal()">↑ Оновити</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="showQR(\''+id+'\')">QR</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="renameDisk(\''+id+'\')">✎ Перейменувати</button>' +
-        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\''+id+'\')">Видалити</button>' +
+        '<div class="more-menu-wrap">' +
+          '<button class="btn btn-ghost btn-sm" onclick="toggleMoreMenu(\'more_'+id+'\')" title="Більше">•••</button>' +
+          '<div class="more-menu" id="more_'+id+'">' +
+            '<div class="more-menu-item" onclick="closeMoreMenu();renameDisk(\''+id+'\')">✎ Перейменувати</div>' +
+            '<div class="more-menu-item danger" onclick="closeMoreMenu();confirmDelete(\''+id+'\')">✕ Видалити диск</div>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     '<div class="stats-row">' +
@@ -1760,6 +1781,23 @@ function closeModal(id) { q(id).classList.remove('open'); }
 
 document.querySelectorAll('.overlay').forEach(o => {
   o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); });
+});
+
+function toggleMoreMenu(id) {
+  const menu = q(id);
+  if (!menu) return;
+  const isOpen = menu.classList.contains('open');
+  closeMoreMenu();
+  if (!isOpen) menu.classList.add('open');
+}
+
+function closeMoreMenu() {
+  document.querySelectorAll('.more-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+// закрити меню при кліку поза ним
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.more-menu-wrap')) closeMoreMenu();
 });
 
 let _tt;
