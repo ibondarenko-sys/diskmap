@@ -395,31 +395,12 @@ body::before {
   .stats-row .stat-card:last-child { grid-column: auto; }
 }
 
-.tree-exts { display: flex; gap: 4px; flex-wrap: wrap; margin-right: 8px; flex-shrink: 0; max-width: 200px; }
+.tree-exts { display: none; } /* вимкнено на папках */
 .ext-badge { font-size: 9px; padding: 2px 5px; border-radius: 3px; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
 .ext-cnt { opacity: 0.7; font-weight: 400; }
-
-/* Mobile tree: name full width, exts below */
-@media (max-width: 768px) {
-  .tree-row { flex-wrap: wrap; padding: 8px 12px 8px 0; align-items: flex-start; }
-  .tree-name { font-size: 13px; min-width: 0; flex: 1 1 auto; }
-  .tree-exts { display: none; } /* hidden inline on mobile */
-  .tree-exts-mobile { display: flex !important; }
-  .tree-count { font-size: 10px; flex-shrink: 0; }
-  .tree-bar-mini { display: none; }
-  .tree-size { font-size: 11px; min-width: 56px; text-align: right; }
-  .tree-toggle { flex-shrink: 0; }
-  .tree-ico { flex-shrink: 0; }
-  /* exts row below name */
-  .tree-row-exts {
-    display: flex; flex-wrap: wrap; gap: 3px;
-    padding: 3px 12px 7px;
-    padding-left: calc(18px + 18px + 18px + 6px); /* indent + toggle + ico */
-    border-bottom: 1px solid var(--border);
-  }
-  .tree-row-exts .ext-badge { font-size: 9px; }
-  .tree-node > .tree-row { border-bottom: none; }
-}
+.file-ext-badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: 700; white-space: nowrap; flex-shrink: 0; margin-right: 8px; letter-spacing: 0.5px; }
+.file-row { opacity: 0.85; }
+.file-row:hover { opacity: 1; }
 
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
@@ -934,39 +915,52 @@ function renderTree(nodes, totalSize, depth) {
   if (!nodes || !nodes.length) return '<div style="padding:12px 18px;font-size:11px;color:var(--text3)">Немає даних. Натисни «Оновити».</div>';
   return nodes.map(node => {
     const pct = totalSize ? Math.round(node.size / totalSize * 100) : 0;
-    const hasChildren = node.children && node.children.length > 0;
+    const hasChildren = (node.children && node.children.length > 0) || (node.items && node.items.length > 0);
     const uid = 'tree_' + Math.random().toString(36).slice(2);
-    const indentPx = depth * 16 + 18;
-    const extBadgesInline = renderExtBadges(node.exts);
-    const extBadgesMobile = renderExtBadgesMobile(node.exts, depth);
+    const indentPx = depth * 18 + 16;
+
+    const filesHtml = node.items && node.items.length
+      ? node.items.map(f => renderFileRow(f, depth + 1)).join('')
+      : '';
+    const childrenHtml = node.children && node.children.length
+      ? renderTree(node.children, totalSize, depth + 1)
+      : '';
 
     return '<div class="tree-node">' +
       '<div class="tree-row" onclick="toggleTree(\'' + uid + '\',this)">' +
         '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
         '<div class="tree-toggle">' + (hasChildren ? '▶' : '&nbsp;') + '</div>' +
-        '<div class="tree-ico">' + (hasChildren ? '📁' : '📄') + '</div>' +
+        '<div class="tree-ico">📁</div>' +
         '<div class="tree-name">' + esc(node.name) + '</div>' +
-        '<div class="tree-exts">' + extBadgesInline + '</div>' +
         '<div class="tree-count">' + (node.files ? node.files.toLocaleString() + ' ф.' : '') + '</div>' +
         '<div class="tree-bar-mini"><div class="tree-bar-fill" style="width:' + Math.min(pct * 3, 100) + '%"></div></div>' +
         '<div class="tree-size">' + fmtGB(node.size) + '</div>' +
       '</div>' +
-      extBadgesMobile +
-      (hasChildren ? '<div class="tree-children" id="' + uid + '">' + renderTree(node.children, totalSize, depth + 1) + '</div>' : '') +
+      (hasChildren ? '<div class="tree-children" id="' + uid + '">' + childrenHtml + filesHtml + '</div>' : '') +
     '</div>';
   }).join('');
 }
 
-function renderExtBadgesMobile(exts, depth) {
-  if (!exts || !Object.keys(exts).length) return '';
-  const indentPx = depth * 16 + 18 + 18 + 20 + 6; // indent + toggle + ico + gap
-  const sorted = Object.entries(exts).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const badges = sorted.map(([ext, cnt]) => {
-    const cat = getExtCat(ext);
-    return '<span class="ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + ext + ' <span class="ext-cnt">' + cnt + '</span></span>';
-  }).join('');
-  return '<div class="tree-row-exts" style="padding-left:' + indentPx + 'px">' + badges + '</div>';
+function renderFileRow(file, depth) {
+  const indentPx = depth * 18 + 16;
+  const cat = getExtCat(file.ext);
+  const extBadge = file.ext
+    ? '<span class="file-ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + file.ext + '</span>'
+    : '';
+  const sizeTxt = file.size >= 1024
+    ? (file.size / 1024).toFixed(1) + ' GB'
+    : file.size > 0 ? file.size.toFixed(0) + ' MB' : '';
+  return '<div class="tree-row file-row">' +
+    '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
+    '<div class="tree-toggle">&nbsp;</div>' +
+    '<div class="tree-ico" style="opacity:0.4">📄</div>' +
+    '<div class="tree-name" style="color:var(--text2)">' + esc(file.name) + '</div>' +
+    extBadge +
+    '<div class="tree-size" style="color:var(--text3)">' + sizeTxt + '</div>' +
+  '</div>';
 }
+
+function renderExtBadgesMobile(exts, depth) { return ''; } // вимкнено
 
 // Ext badge colors by category
 const EXT_CATS = {
@@ -1143,6 +1137,7 @@ async function pickFolder() {
 async function scanDir(handle, depth, logFn) {
   let totalBytes = 0;
   const tree = [];
+  const filesList = []; // прямі файли в цій папці
   let directFiles = 0;
   const exts = {};
 
@@ -1161,6 +1156,7 @@ async function scanDir(handle, depth, logFn) {
           size: Math.round(sub.totalBytes / 1024 / 1024 / 1024 * 1000) / 1000,
           files: sub.fileCount,
           exts: sub.exts,
+          items: sub.filesList, // файли прямо в цій папці
           children: depth < 4 ? sub.tree : []
         });
       } catch(e) {}
@@ -1170,17 +1166,28 @@ async function scanDir(handle, depth, logFn) {
         totalBytes += f.size;
         directFiles++;
         const dot = name.lastIndexOf('.');
-        if (dot > 0) {
-          const ext = name.slice(dot + 1).toLowerCase();
-          exts[ext] = (exts[ext] || 0) + 1;
+        const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+        if (ext) exts[ext] = (exts[ext] || 0) + 1;
+        // зберігаємо файл тільки якщо глибина не надто велика (економія розміру)
+        if (depth <= 5) {
+          filesList.push({
+            name,
+            ext,
+            size: Math.round(f.size / 1024 / 1024 * 10) / 10 // MB
+          });
         }
       } catch(e) {}
     }
   }
 
+  // сортуємо файли: спочатку по розширенню, потім по назві
+  filesList.sort((a, b) => {
+    if (a.ext !== b.ext) return a.ext.localeCompare(b.ext);
+    return a.name.localeCompare(b.name);
+  });
   tree.sort((a, b) => b.size - a.size);
   const fileCount = directFiles + tree.reduce((s, n) => s + (n.files || 0), 0);
-  return { tree, totalBytes, fileCount, exts };
+  return { tree, totalBytes, fileCount, exts, filesList };
 }
 
 // ============================================================
