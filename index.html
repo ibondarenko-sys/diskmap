@@ -1168,14 +1168,19 @@ async function createDisk() {
   const cap = parseInt(q('nd-cap').value)||0;
   if (!name) { toast('Введи назву', 'err'); return; }
   const id = 'disk-' + Date.now().toString(36);
-  // Запис в індекс (gistId буде присвоєний при першому saveDiskData)
   S.index[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), gistId:'' };
   S.disks[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), tree:[], notes:[] };
   try {
-    // Створюємо окремий Gist для диску
     if (!S.isDemo) {
-      const created = await createDiskGist(name);
-      S.index[id].gistId = created.id;
+      // створюємо Gist через Worker
+      const r = await fetch(CFG.apiUrl + '/disk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const data = await r.json();
+      if (!data.ok || !data.id) throw new Error('Не вдалось створити сховище для диску');
+      S.index[id].gistId = data.id;
       await saveDiskData(id);
       await saveIndex();
     }
