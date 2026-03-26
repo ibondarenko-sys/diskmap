@@ -6,7 +6,7 @@
 <title>DiskMap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 :root {
   --bg: #080c10;
@@ -1105,21 +1105,61 @@ function showQR(id) {
   q('qr-name').textContent = d.name;
   q('qr-url').textContent = url;
   openModal('modal-qr');
-  QRCode.toDataURL(url, { width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' } }, function(err, dataUrl) {
-    if (err) { toast('QR помилка: ' + err, 'err'); return; }
-    q('qr-img').src = dataUrl;
-    q('qr-img')._dataUrl = dataUrl; // store for download
-  });
+
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    // render as table-based SVG via built-in method
+    const size = 220;
+    const count = qr.getModuleCount();
+    const cell = Math.floor(size / count);
+    const margin = 10;
+    let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + (size + margin*2) + '" height="' + (size + margin*2) + '">';
+    svg += '<rect width="100%" height="100%" fill="white"/>';
+    for (let row = 0; row < count; row++) {
+      for (let col = 0; col < count; col++) {
+        if (qr.isDark(row, col)) {
+          svg += '<rect x="' + (col * cell + margin) + '" y="' + (row * cell + margin) + '" width="' + cell + '" height="' + cell + '" fill="black"/>';
+        }
+      }
+    }
+    svg += '</svg>';
+    const dataUrl = 'data:image/svg+xml;base64,' + btoa(svg);
+    const img = q('qr-img');
+    img.src = dataUrl;
+    img._svgData = svg;
+  } catch(e) {
+    toast('QR помилка: ' + e.message, 'err');
+  }
 }
 
 function downloadQR() {
   const img = q('qr-img');
-  const src = img._dataUrl || img.src;
-  if (!src || src === window.location.href) { toast('QR ще не згенеровано', 'err'); return; }
-  const a = document.createElement('a');
-  a.download = 'qr-' + (S.disks[S.currentDisk]?.name || 'disk').replace(/\s+/g, '_') + '.png';
-  a.href = src;
-  a.click();
+  const d = S.disks[S.currentDisk];
+  const fname = 'qr-' + (d?.name || 'disk').replace(/\s+/g, '_') + '.png';
+
+  // convert SVG to PNG via canvas
+  const svg = img._svgData;
+  if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
+  const blob = new Blob([svg], {type: 'image/svg+xml'});
+  const blobUrl = URL.createObjectURL(blob);
+  const image = new Image();
+  image.onload = function() {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width * 2;
+    canvas.height = image.height * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(blobUrl);
+    const a = document.createElement('a');
+    a.download = fname;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  };
+  image.src = blobUrl;
 }
 
 // ============================================================
