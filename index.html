@@ -543,6 +543,32 @@ body::before {
 .more-menu-item.danger { color: var(--red); }
 .more-menu-item.danger:hover { background: var(--red-dim); }
 
+/* Disk type selector */
+.disk-type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.disk-type-btn {
+  border: 1px solid var(--border); border-radius: var(--r);
+  padding: 10px 8px; text-align: center; cursor: pointer;
+  transition: all 0.15s; background: var(--bg2);
+}
+.disk-type-btn:hover { border-color: var(--border2); }
+.disk-type-btn.active { border-color: var(--accent); background: var(--accent-dim); }
+.dtb-icon { font-size: 18px; margin-bottom: 4px; }
+.dtb-label { font-size: 10px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.dtb-sub { font-size: 9px; color: var(--text3); }
+
+/* Disk card type colors */
+.disk-card.type-portable-hdd { border-left: 3px solid #a0714f; }
+.disk-card.type-portable-ssd { border-left: 3px solid #555; }
+.disk-card.type-desktop-hdd  { border-left: 3px solid #c0392b; }
+.disk-card.type-usb-flash    { border-left: 3px solid #2980b9; }
+.disk-card.type-nvme         { border-left: 3px solid #8e44ad; }
+.disk-card.type-other        { border-left: 3px solid #555; }
+
+.dc-type-badge {
+  font-size: 9px; color: var(--text3); margin-bottom: 6px;
+  display: flex; align-items: center; gap: 4px;
+}
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -676,6 +702,41 @@ body::before {
     <div class="modal-sub">Додай диск, потім відскануй його структуру</div>
     <div class="field"><label>Назва</label><input type="text" id="nd-name" placeholder="WD Black 4TB #1"></div>
     <div class="field"><label>Ємність (ГБ)</label><input type="number" id="nd-cap" placeholder="4000"></div>
+    <div class="field">
+      <label>Тип диску</label>
+      <div class="disk-type-grid" id="disk-type-grid">
+        <div class="disk-type-btn active" data-type="portable-hdd" onclick="selectDiskType(this)">
+          <div class="dtb-icon">🟤</div>
+          <div class="dtb-label">Portable HDD</div>
+          <div class="dtb-sub">WD, Seagate</div>
+        </div>
+        <div class="disk-type-btn" data-type="portable-ssd" onclick="selectDiskType(this)">
+          <div class="dtb-icon">⚫</div>
+          <div class="dtb-label">Portable SSD</div>
+          <div class="dtb-sub">Samsung T7</div>
+        </div>
+        <div class="disk-type-btn" data-type="desktop-hdd" onclick="selectDiskType(this)">
+          <div class="dtb-icon">🔴</div>
+          <div class="dtb-label">Desktop HDD</div>
+          <div class="dtb-sub">З блоком живл.</div>
+        </div>
+        <div class="disk-type-btn" data-type="usb-flash" onclick="selectDiskType(this)">
+          <div class="dtb-icon">🔵</div>
+          <div class="dtb-label">USB Flash</div>
+          <div class="dtb-sub">Transcend, USB-A</div>
+        </div>
+        <div class="disk-type-btn" data-type="nvme" onclick="selectDiskType(this)">
+          <div class="dtb-icon">🟣</div>
+          <div class="dtb-label">NVMe / TB</div>
+          <div class="dtb-sub">Thunderbolt</div>
+        </div>
+        <div class="disk-type-btn" data-type="other" onclick="selectDiskType(this)">
+          <div class="dtb-icon">⚪</div>
+          <div class="dtb-label">Інше</div>
+          <div class="dtb-sub">Будь-який</div>
+        </div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="createDisk()">Створити →</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-add')">Скасувати</button>
@@ -1004,24 +1065,25 @@ async function loadIndex() {
   } catch(e) { toast('Помилка завантаження: ' + e.message, 'err'); }
 }
 
-async function saveIndex() {
+async function saveIndex(force = false) {
   if (S.isDemo) return;
 
-  // ЗАХИСТ: спочатку читаємо що зараз в Gist
-  try {
-    const check = await fetch(CFG.apiUrl + '/index');
-    if (check.ok) {
-      const existing = await check.json();
-      const existingCount = Object.values(existing).filter(v => v && v.id).length;
-      const newCount = Object.values(S.index).filter(v => v && v.id).length;
-      if (existingCount > newCount) {
-        // відновлюємо диски які є в Gist але зникли з пам'яті
-        Object.entries(existing).forEach(([k, v]) => {
-          if (v && v.id && !S.index[k]) S.index[k] = v;
-        });
+  // ЗАХИСТ від випадкового затирання (але не при навмисному видаленні)
+  if (!force) {
+    try {
+      const check = await fetch(CFG.apiUrl + '/index');
+      if (check.ok) {
+        const existing = await check.json();
+        const existingCount = Object.values(existing).filter(v => v && v.id).length;
+        const newCount = Object.values(S.index).filter(v => v && v.id).length;
+        if (existingCount > newCount) {
+          Object.entries(existing).forEach(([k, v]) => {
+            if (v && v.id && !S.index[k]) S.index[k] = v;
+          });
+        }
       }
-    }
-  } catch(e) { /* якщо не вдалось перевірити — не блокуємо збереження */ }
+    } catch(e) {}
+  }
 
   const r = await fetch(CFG.apiUrl + '/index', {
     method: 'PATCH',
@@ -1127,6 +1189,20 @@ function updateSidebar() {
   }).join('');
 }
 
+// Disk type config
+const DISK_TYPES = {
+  'portable-hdd': { icon: '🟤', label: 'Portable HDD' },
+  'portable-ssd': { icon: '⚫', label: 'Portable SSD' },
+  'desktop-hdd':  { icon: '🔴', label: 'Desktop HDD' },
+  'usb-flash':    { icon: '🔵', label: 'USB Flash' },
+  'nvme':         { icon: '🟣', label: 'NVMe / TB' },
+  'other':        { icon: '⚪', label: 'Інше' },
+};
+
+function getDiskType(d) {
+  return DISK_TYPES[d.diskType] || DISK_TYPES['other'];
+}
+
 // ============================================================
 // RENDER LIST
 // ============================================================
@@ -1139,10 +1215,12 @@ function renderList() {
   disks.forEach(d => {
     const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
     const cls = pct>=90?'full':pct>=70?'warn':'ok';
-    html += '<div class="disk-card" onclick="showDisk(\''+d.id+'\')">' +
-      '<div class="dc-top"><div class="dc-icon">💾</div><div class="dc-badge badge-'+cls+'">'+cls.toUpperCase()+'</div></div>' +
+    const dt = getDiskType(d);
+    const typeClass = d.diskType ? 'type-'+d.diskType : '';
+    html += '<div class="disk-card '+typeClass+'" onclick="showDisk(\''+d.id+'\')">' +
+      '<div class="dc-top"><div class="dc-icon">'+dt.icon+'</div><div class="dc-badge badge-'+cls+'">'+cls.toUpperCase()+'</div></div>' +
       '<div class="dc-name">'+esc(d.name)+'</div>' +
-      '<div class="dc-id">id: '+d.id+'</div>' +
+      '<div class="dc-type-badge">'+dt.label+'</div>' +
       '<div class="dc-bar"><div class="dc-bar-fill fill-'+cls+'" style="width:'+pct+'%"></div></div>' +
       '<div class="dc-stats"><span>'+fmtGB(d.used)+' / '+fmtGB(d.capacity)+'</span><span>'+pct+'%</span></div>' +
       '<div class="dc-updated">↻ '+fmtAgo(d.updatedAt)+'</div>' +
@@ -1421,7 +1499,7 @@ function renderSearchRow(r, val, type) {
   const icon = type === 'disk' ? '💾' : '📁';
   const nameOnly = r.pathArr ? r.pathArr[r.pathArr.length - 1] : r.diskName;
   const pathWithout = r.pathArr && r.pathArr.length > 1 ? r.pathArr.slice(0,-1).join(' / ') : '';
-  return '<div class="search-result-row" onclick="closeSearch();navigateToPath(\''+r.diskId+'\',\''+pathJson+'\')">' +
+  return '<div class="search-result-row" onclick="handleSearchClick(this,\''+r.diskId+'\',\''+pathJson+'\')">' +
     '<div class="srr-icon">'+icon+'</div>' +
     '<div class="srr-main">' +
       '<div class="srr-name">'+highlightMatch(nameOnly, val)+'</div>' +
@@ -1431,36 +1509,46 @@ function renderSearchRow(r, val, type) {
   '</div>';
 }
 
-function searchTree(nodes, query, disk, pathArr, results) {
-  if (!nodes) return;
-  nodes.forEach(node => {
-    const nodePath = [...pathArr, node.name];
-    if (node.name.toLowerCase().includes(query)) {
-      results.push({ diskId:disk.id, diskName:disk.name, path:nodePath.join(' / '), pathArr:nodePath, size:node.size, files:node.files });
-    }
-    if (node.children) searchTree(node.children, query, disk, nodePath, results);
-  });
-}
+let _navigating = false;
 
-function highlightMatch(text, query) {
-  const re = new RegExp('('+query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')', 'gi');
-  return esc(text).replace(re, '<mark>$1</mark>');
+function handleSearchClick(el, diskId, pathJson) {
+  if (_navigating) return;
+  el.style.background = 'var(--accent-dim)';
+  closeSearch();
+  navigateToPath(diskId, pathJson);
 }
 
 async function navigateToPath(diskId, pathJson) {
-  if (!pathJson) { showDisk(diskId); return; }
-  const pathArr = JSON.parse(decodeURIComponent(pathJson));
+  if (_navigating) return;
+  _navigating = true;
+  const pathArr = pathJson ? JSON.parse(decodeURIComponent(pathJson)) : null;
+
   S.currentDisk = diskId;
   updateSidebar();
   document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
   const si = document.querySelector('.sidebar-item[data-disk="'+diskId+'"]');
   if (si) si.classList.add('active');
   q('nav-all').classList.remove('active');
-  renderDetailSkeleton(diskId);
-  const disk = await loadDiskData(diskId);
-  if (disk) {
+
+  // якщо вже є в кеші — одразу без запиту
+  if (S.disks[diskId]) {
     renderDetail(diskId);
-    setTimeout(() => expandTreePath(diskId, pathArr), 50);
+    if (pathArr) setTimeout(() => expandTreePath(diskId, pathArr), 50);
+    _navigating = false;
+    return;
+  }
+
+  renderDetailSkeleton(diskId);
+  try {
+    const disk = await loadDiskData(diskId);
+    if (disk) {
+      renderDetail(diskId);
+      if (pathArr) setTimeout(() => expandTreePath(diskId, pathArr), 50);
+    }
+  } catch(e) {
+    toast('Помилка завантаження', 'err');
+  } finally {
+    _navigating = false;
   }
 }
 
@@ -1469,16 +1557,22 @@ async function navigateToPath(diskId, pathJson) {
 // ============================================================
 // DISK CRUD
 // ============================================================
+function selectDiskType(btn) {
+  document.querySelectorAll('.disk-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
 async function createDisk() {
   const name = q('nd-name').value.trim();
   const cap = parseInt(q('nd-cap').value)||0;
   if (!name) { toast('Введи назву', 'err'); return; }
+  const activeType = document.querySelector('.disk-type-btn.active');
+  const diskType = activeType ? activeType.dataset.type : 'other';
   const id = 'disk-' + Date.now().toString(36);
-  S.index[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), gistId:'' };
-  S.disks[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), tree:[], notes:[] };
+  S.index[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), gistId:'', diskType };
+  S.disks[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), tree:[], notes:[], diskType };
   try {
     if (!S.isDemo) {
-      // створюємо Gist через Worker
       const r = await fetch(CFG.apiUrl + '/disk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1492,6 +1586,8 @@ async function createDisk() {
     }
     closeModal('modal-add');
     q('nd-name').value=''; q('nd-cap').value='';
+    // скидаємо тип на перший
+    document.querySelectorAll('.disk-type-btn').forEach((b,i) => b.classList.toggle('active', i===0));
     toast('Диск додано', 'ok');
     showDisk(id);
   } catch(e) { toast('Помилка: '+e.message, 'err'); }
@@ -1502,7 +1598,7 @@ async function confirmDelete(id) {
   delete S.index[id];
   delete S.disks[id];
   try {
-    await saveIndex();
+    await saveIndex(true); // force=true — не відновлювати видалене
     toast('Видалено', 'ok');
     showList();
   } catch(e) { toast('Помилка', 'err'); }
