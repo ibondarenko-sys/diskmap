@@ -886,14 +886,17 @@ function afterLogin() {
   q('header-username').textContent = S.username;
   nav('app');
 
-  // підвантажуємо всі диски у фоні щоб пошук одразу працював
-  setTimeout(() => {
-    getDisks().forEach(entry => {
-      if (!S.disks[entry.id] && entry.gistId) {
-        loadDiskData(entry.id).catch(() => {});
-      }
+  // підвантажуємо диски по черзі у фоні — не паралельно щоб не гальмувати UI
+  const toLoad = getDisks().filter(e => !S.disks[e.id] && e.gistId);
+  let i = 0;
+  function loadNext() {
+    if (i >= toLoad.length) return;
+    loadDiskData(toLoad[i].id).catch(() => {}).finally(() => {
+      i++;
+      setTimeout(loadNext, 800); // пауза між запитами
     });
-  }, 500);
+  }
+  setTimeout(loadNext, 2000); // починаємо через 2с після логіну
 
   const pendingDisk = sessionStorage.getItem('diskmap3_pending_disk');
   if (pendingDisk) {
