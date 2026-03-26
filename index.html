@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>DiskMap</title>
+<title>Postmen Production — DiskMap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
@@ -1119,17 +1119,24 @@ function renderDetail(id) {
 // ============================================================
 // TREE RENDERER
 // ============================================================
-function renderTree(nodes, totalSize, depth) {
+function treeUid(diskId, pathArr) {
+  return 'tree_' + diskId + '_' + pathArr.map(p => p.replace(/[^a-zA-Z0-9]/g,'_')).join('__');
+}
+
+function renderTree(nodes, totalSize, depth, diskId, pathArr) {
+  pathArr = pathArr || [];
+  diskId = diskId || S.currentDisk || '';
   if (!nodes || !nodes.length) return '<div style="padding:12px 18px;font-size:11px;color:var(--text3)">Немає даних. Натисни «Оновити».</div>';
   return nodes.map(node => {
     const pct = totalSize ? Math.round(node.size / totalSize * 100) : 0;
     const hasChildren = (node.children && node.children.length > 0) || (node.items && node.items.length > 0);
-    const uid = 'tree_' + Math.random().toString(36).slice(2);
+    const nodePath = [...pathArr, node.name];
+    const uid = treeUid(diskId, nodePath);
     const indentPx = depth * 18 + 16;
     const filesHtml = node.items && node.items.length ? node.items.map(f => renderFileRow(f, depth+1)).join('') : '';
-    const childrenHtml = node.children && node.children.length ? renderTree(node.children, totalSize, depth+1) : '';
+    const childrenHtml = node.children && node.children.length ? renderTree(node.children, totalSize, depth+1, diskId, nodePath) : '';
     return '<div class="tree-node">' +
-      '<div class="tree-row" onclick="toggleTree(\''+uid+'\',this)">' +
+      '<div class="tree-row" id="row_'+uid+'" onclick="toggleTree(\''+uid+'\',this)">' +
         '<div class="tree-indent" style="width:'+indentPx+'px"></div>' +
         '<div class="tree-toggle">'+(hasChildren?'▶':'&nbsp;')+'</div>' +
         '<div class="tree-ico">📁</div>' +
@@ -1141,6 +1148,40 @@ function renderTree(nodes, totalSize, depth) {
       (hasChildren?'<div class="tree-children" id="'+uid+'">'+childrenHtml+filesHtml+'</div>':'') +
     '</div>';
   }).join('');
+}
+
+// Розкрити шлях в дереві і прокрутити до потрібної папки
+function expandTreePath(diskId, pathArr) {
+  // розкриваємо кожен рівень шляху
+  let currentPath = [];
+  for (const segment of pathArr) {
+    currentPath.push(segment);
+    const uid = treeUid(diskId, currentPath);
+    const el = document.getElementById(uid);
+    const row = document.getElementById('row_' + uid);
+    if (el && !el.classList.contains('open')) {
+      el.classList.add('open');
+      if (row) {
+        const toggle = row.querySelector('.tree-toggle');
+        if (toggle) toggle.textContent = '▼';
+      }
+    }
+  }
+  // скролимо до останнього елементу
+  const lastUid = treeUid(diskId, pathArr);
+  const lastRow = document.getElementById('row_' + lastUid);
+  if (lastRow) {
+    setTimeout(() => {
+      lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // підсвічуємо
+      lastRow.style.background = 'var(--accent-dim)';
+      lastRow.style.borderLeft = '2px solid var(--accent)';
+      setTimeout(() => {
+        lastRow.style.background = '';
+        lastRow.style.borderLeft = '';
+      }, 2000);
+    }, 100);
+  }
 }
 
 function renderFileRow(file, depth) {
@@ -1217,13 +1258,14 @@ function onSearch(val) {
   if (!results.length) {
     dd.innerHTML = '<div class="search-empty">Нічого не знайдено</div>';
   } else {
-    dd.innerHTML = results.slice(0,12).map(r =>
-      '<div class="search-result-item" onclick="showDisk(\''+r.diskId+'\')">' +
+    dd.innerHTML = results.slice(0,12).map(r => {
+      const pathJson = r.pathArr ? encodeURIComponent(JSON.stringify(r.pathArr)) : '';
+      return '<div class="search-result-item" onclick="closeSearch();navigateToPath(\''+r.diskId+'\',\''+pathJson+'\')">' +
         '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
         '<div class="sri-path">'+highlightMatch(r.path, val)+'</div>' +
         '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' файлів':'')+'</div>' +
-      '</div>'
-    ).join('');
+      '</div>';
+    }).join('');
   }
   dd.classList.add('open');
 }
@@ -1231,11 +1273,12 @@ function onSearch(val) {
 function searchTree(nodes, query, disk, pathArr, results) {
   if (!nodes) return;
   nodes.forEach(node => {
-    const fullPath = [...pathArr, node.name].join(' / ');
+    const nodePath = [...pathArr, node.name];
+    const fullPath = nodePath.join(' / ');
     if (node.name.toLowerCase().includes(query)) {
-      results.push({ diskId:disk.id, diskName:disk.name, path:fullPath, size:node.size, files:node.files });
+      results.push({ diskId:disk.id, diskName:disk.name, path:fullPath, pathArr:nodePath, size:node.size, files:node.files });
     }
-    if (node.children) searchTree(node.children, query, disk, [...pathArr, node.name], results);
+    if (node.children) searchTree(node.children, query, disk, nodePath, results);
   });
 }
 
@@ -1245,6 +1288,26 @@ function highlightMatch(text, query) {
 }
 
 function closeSearch() { q('search-dropdown').classList.remove('open'); }
+
+async function navigateToPath(diskId, pathJson) {
+  // якщо немає шляху — просто відкриваємо диск
+  if (!pathJson) { showDisk(diskId); return; }
+  const pathArr = JSON.parse(decodeURIComponent(pathJson));
+  // відкриваємо диск і після рендеру розкриваємо шлях
+  S.currentDisk = diskId;
+  updateSidebar();
+  document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
+  const si = document.querySelector('.sidebar-item[data-disk="'+diskId+'"]');
+  if (si) si.classList.add('active');
+  q('nav-all').classList.remove('active');
+  renderDetailSkeleton(diskId);
+  const disk = await loadDiskData(diskId);
+  if (disk) {
+    renderDetail(diskId);
+    // після рендеру розкриваємо шлях
+    setTimeout(() => expandTreePath(diskId, pathArr), 50);
+  }
+}
 
 function openMobileSearch() {
   q('mobile-search-overlay').classList.add('open');
@@ -1276,13 +1339,14 @@ function onMobileSearch(val) {
     container.innerHTML = '<div class="mobile-search-empty">Нічого не знайдено</div>';
     return;
   }
-  container.innerHTML = results.slice(0, 20).map(r =>
-    '<div class="search-result-item" onclick="closeMobileSearch();showDisk(\''+r.diskId+'\')" style="padding:14px 16px">' +
+  container.innerHTML = results.slice(0, 20).map(r => {
+    const pathJson = r.pathArr ? encodeURIComponent(JSON.stringify(r.pathArr)) : '';
+    return '<div class="search-result-item" onclick="closeMobileSearch();navigateToPath(\''+r.diskId+'\',\''+pathJson+'\')" style="padding:14px 16px">' +
       '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
       '<div class="sri-path">'+highlightMatch(r.path, val)+'</div>' +
       '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' ф.':'')+'</div>' +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
 }
 
 // ============================================================
