@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>DiskMap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+:root {
+  --bg: #080c10;
+  --bg2: #0e1318;
+  --surface: #131920;
+  --surface2: #1a2230;
+  --border: #1e2d3d;
+  --border2: #263545;
+  --accent: #00d4ff;
+  --accent-dim: rgba(0,212,255,0.12);
+  --accent2: #ff6b35;
+  --green: #00ff88;
+  --green-dim: rgba(0,255,136,0.1);
+  --yellow: #ffcc00;
+  --yellow-dim: rgba(255,204,0,0.1);
+  --red: #ff3355;
+  --red-dim: rgba(255,51,85,0.1);
+  --text: #e8edf2;
+  --text2: #7a8fa0;
+  --text3: #3d5060;
+  --mono: 'JetBrains Mono', monospace;
+  --display: 'Unbounded', sans-serif;
+  --r: 6px;
+  --shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13px; scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scanline texture */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+}
+
+/* grid bg */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.3;
+}
+
+#app { position: relative; z-index: 1; }
+
+/* ===== VIEWS ===== */
+.view { display: none; }
+.view.active { display: block; animation: fadeUp 0.25s ease; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+
+/* ===== LOGIN ===== */
+#view-login {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.login-wrap { width: 100%; max-width: 380px; }
+.login-logo {
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--accent);
+  letter-spacing: -1px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.login-logo span { color: var(--text3); }
+.login-sub { text-align: center; font-size: 11px; color: var(--text3); margin-bottom: 36px; letter-spacing: 1px; text-transform: uppercase; }
+.login-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 32px;
+  box-shadow: var(--shadow), 0 0 60px rgba(0,212,255,0.04);
+}
+.login-box .field { margin-bottom: 16px; }
+.login-box label { display: block; font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 7px; }
+.login-box input {
+  width: 100%; background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); padding: 11px 14px; font-family: var(--mono);
+  font-size: 13px; border-radius: var(--r); outline: none; transition: border-color 0.15s;
+}
+.login-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.login-box input::placeholder { color: var(--text3); }
+.login-error { font-size: 11px; color: var(--red); margin-top: 12px; display: none; text-align: center; }
+.login-error.show { display: block; }
+.login-setup-link { text-align: center; margin-top: 20px; font-size: 11px; color: var(--text3); }
+.login-setup-link a { color: var(--accent); cursor: pointer; text-decoration: none; }
+
+/* ===== SETUP ===== */
+#view-setup {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.setup-wrap { width: 100%; max-width: 440px; }
+.setup-wrap h1 { font-family: var(--display); font-size: 22px; font-weight: 900; margin-bottom: 6px; color: var(--accent); }
+.setup-wrap .sub { font-size: 11px; color: var(--text3); margin-bottom: 28px; line-height: 1.6; }
+.setup-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; padding: 28px; }
+.setup-section-title { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin-bottom: 14px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.setup-section-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.note { background: var(--bg2); border-left: 2px solid var(--accent); border-radius: var(--r); padding: 10px 14px; font-size: 11px; color: var(--text2); line-height: 1.6; margin-bottom: 16px; }
+.note code { color: var(--accent); }
+.note a { color: var(--accent); }
+
+/* ===== FIELDS ===== */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 7px; }
+.field input, .field textarea, .field select {
+  width: 100%; background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 13px; font-family: var(--mono);
+  font-size: 12px; border-radius: var(--r); outline: none; transition: border-color 0.15s;
+}
+.field input:focus, .field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.field textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+.field input::placeholder, .field textarea::placeholder { color: var(--text3); }
+.field-hint { font-size: 10px; color: var(--text3); margin-top: 5px; line-height: 1.5; }
+
+/* ===== BUTTONS ===== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 16px; border-radius: var(--r); font-family: var(--mono);
+  font-size: 12px; font-weight: 500; cursor: pointer; border: none;
+  transition: all 0.15s; text-decoration: none; white-space: nowrap; letter-spacing: 0.3px;
+}
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { background: #33ddff; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,0.3); }
+.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(255,51,85,0.2); }
+.btn-danger:hover { background: var(--red-dim); }
+.btn-sm { padding: 6px 12px; font-size: 11px; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; }
+.btn-full { width: 100%; }
+.btn-icon { padding: 8px; }
+
+/* ===== HEADER ===== */
+.app-header {
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(8,12,16,0.92); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px; height: 52px;
+  display: flex; align-items: center; gap: 12px;
+}
+.header-logo { font-family: var(--display); font-size: 14px; font-weight: 900; color: var(--accent); letter-spacing: -0.5px; cursor: pointer; flex-shrink: 0; }
+.header-logo span { color: var(--text3); font-weight: 400; }
+.header-sep { flex: 1; }
+.header-search-wrap { flex: 1; max-width: 320px; position: relative; }
+.header-search {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); padding: 7px 12px 7px 34px; font-family: var(--mono);
+  font-size: 12px; border-radius: 20px; outline: none; transition: all 0.2s;
+}
+.header-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.header-search::placeholder { color: var(--text3); }
+.search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text3); pointer-events: none; }
+.header-user { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 8px; }
+.header-user .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+.header-btn { background: transparent; border: 1px solid var(--border); color: var(--text3); padding: 5px 10px; border-radius: var(--r); font-family: var(--mono); font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.header-btn:hover { border-color: var(--border2); color: var(--text); }
+
+/* ===== SEARCH RESULTS ===== */
+.search-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r); box-shadow: var(--shadow); z-index: 500;
+  display: none; max-height: 360px; overflow-y: auto;
+}
+.search-dropdown.open { display: block; }
+.search-result-item {
+  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--surface2); }
+.sri-disk { font-size: 10px; color: var(--accent); margin-bottom: 2px; letter-spacing: 0.5px; }
+.sri-path { font-size: 12px; color: var(--text); }
+.sri-path mark { background: rgba(0,212,255,0.2); color: var(--accent); border-radius: 2px; padding: 0 2px; }
+.sri-size { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.search-empty { padding: 24px; text-align: center; font-size: 12px; color: var(--text3); }
+
+/* ===== LAYOUT ===== */
+.app-layout { display: flex; min-height: calc(100vh - 52px); }
+
+/* SIDEBAR */
+.sidebar {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg2); border-right: 1px solid var(--border);
+  padding: 16px 0; position: sticky; top: 52px;
+  height: calc(100vh - 52px); overflow-y: auto;
+}
+.sidebar-section { margin-bottom: 6px; }
+.sidebar-section-title { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); padding: 8px 16px 6px; }
+.sidebar-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 16px; cursor: pointer; font-size: 12px; color: var(--text2);
+  transition: all 0.12s; border-left: 2px solid transparent; position: relative;
+}
+.sidebar-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.sidebar-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+.sidebar-item .item-icon { font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
+.sidebar-item .item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-item .item-badge { font-size: 9px; background: var(--surface2); color: var(--text3); padding: 2px 6px; border-radius: 10px; }
+.sidebar-item .item-pct { font-size: 9px; color: var(--text3); }
+.sidebar-add { margin: 8px 12px; }
+.sidebar-divider { height: 1px; background: var(--border); margin: 8px 16px; }
+
+/* MAIN */
+.main-content { flex: 1; padding: 28px 28px; min-width: 0; }
+
+/* ===== DISK LIST VIEW ===== */
+.page-title {
+  font-family: var(--display);
+  font-size: 22px; font-weight: 900; letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+.page-sub { font-size: 11px; color: var(--text3); margin-bottom: 24px; }
+.disks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+
+.disk-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 18px; cursor: pointer;
+  transition: all 0.15s; position: relative; overflow: hidden;
+}
+.disk-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(0,212,255,0.03), transparent); opacity: 0; transition: opacity 0.2s; }
+.disk-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.disk-card:hover::after { opacity: 1; }
+.dc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.dc-icon { font-size: 22px; }
+.dc-badge { font-size: 9px; padding: 3px 8px; border-radius: 20px; letter-spacing: 0.5px; font-weight: 600; }
+.badge-ok { background: var(--green-dim); color: var(--green); }
+.badge-warn { background: var(--yellow-dim); color: var(--yellow); }
+.badge-full { background: var(--red-dim); color: var(--red); }
+.dc-name { font-family: var(--display); font-size: 13px; font-weight: 700; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-id { font-size: 9px; color: var(--text3); margin-bottom: 14px; }
+.dc-bar { height: 3px; background: var(--surface2); border-radius: 2px; margin-bottom: 8px; overflow: hidden; }
+.dc-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.fill-ok { background: var(--green); }
+.fill-warn { background: var(--yellow); }
+.fill-full { background: var(--red); }
+.dc-stats { display: flex; justify-content: space-between; font-size: 10px; color: var(--text3); }
+.dc-updated { font-size: 9px; color: var(--text3); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+.disk-card-add {
+  border-style: dashed; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; min-height: 160px;
+  color: var(--text3); gap: 8px; cursor: pointer;
+}
+.disk-card-add:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ===== DISK DETAIL VIEW ===== */
+.detail-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+}
+.detail-title-wrap {}
+.detail-disk-name { font-family: var(--display); font-size: 26px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 3px; }
+.detail-disk-id { font-size: 10px; color: var(--text3); }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; padding-top: 4px; }
+
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 18px; }
+.stat-label { font-size: 9px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+.stat-value { font-family: var(--display); font-size: 20px; font-weight: 900; }
+
+.usage-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 18px 20px; margin-bottom: 20px; }
+.usage-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); margin-bottom: 12px; }
+.usage-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+.usage-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+
+/* FOLDER TREE */
+.tree-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 20px; overflow: hidden; }
+.tree-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.tree-title { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); }
+.tree-body { padding: 8px 0; }
+
+.tree-node { user-select: none; }
+.tree-row {
+  display: flex; align-items: center; gap: 0;
+  padding: 5px 18px 5px 0; cursor: pointer;
+  transition: background 0.1s; font-size: 12px;
+  position: relative;
+}
+.tree-row:hover { background: var(--surface2); }
+.tree-indent { flex-shrink: 0; }
+.tree-toggle { width: 18px; flex-shrink: 0; text-align: center; font-size: 9px; color: var(--text3); }
+.tree-ico { margin-right: 6px; font-size: 13px; flex-shrink: 0; }
+.tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-count { font-size: 10px; color: var(--text3); margin-right: 12px; flex-shrink: 0; }
+.tree-size { font-size: 11px; color: var(--text2); flex-shrink: 0; min-width: 64px; text-align: right; padding-right: 18px; }
+.tree-children { display: none; }
+.tree-children.open { display: block; }
+.tree-bar-mini { width: 40px; height: 2px; background: var(--surface2); border-radius: 1px; overflow: hidden; margin-right: 10px; flex-shrink: 0; }
+.tree-bar-fill { height: 100%; background: var(--accent); opacity: 0.5; }
+
+/* NOTES */
+.notes-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 20px; }
+.notes-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.notes-title { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); }
+.notes-list { padding: 0; }
+.note-item { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.note-item:last-child { border-bottom: none; }
+.note-meta { display: flex; gap: 10px; margin-bottom: 6px; align-items: center; }
+.note-author { font-size: 10px; color: var(--accent); font-weight: 600; }
+.note-date { font-size: 10px; color: var(--text3); }
+.note-text { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.note-empty { padding: 24px 18px; font-size: 12px; color: var(--text3); }
+.notes-add { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-end; }
+.notes-add textarea { flex: 1; background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; font-family: var(--mono); font-size: 12px; border-radius: var(--r); outline: none; resize: none; height: 60px; transition: border-color 0.15s; }
+.notes-add textarea:focus { border-color: var(--accent); }
+
+/* ===== MODALS ===== */
+.overlay {
+  position: fixed; inset: 0; z-index: 800;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 28px; width: 100%; max-width: 440px;
+  position: relative; animation: fadeUp 0.2s ease;
+  box-shadow: var(--shadow);
+}
+.modal-lg { max-width: 520px; }
+.modal-close { position: absolute; top: 14px; right: 14px; background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; font-family: var(--mono); line-height: 1; padding: 4px; }
+.modal-close:hover { color: var(--text); }
+.modal h3 { font-family: var(--display); font-weight: 900; font-size: 16px; margin-bottom: 4px; }
+.modal .modal-sub { font-size: 11px; color: var(--text3); margin-bottom: 22px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+
+/* UPDATE MODAL */
+.drop-zone {
+  border: 2px dashed var(--border2); border-radius: var(--r);
+  padding: 32px 24px; text-align: center; cursor: pointer;
+  transition: all 0.15s; margin-bottom: 14px;
+}
+.drop-zone:hover { border-color: var(--accent); background: var(--accent-dim); }
+.drop-icon { font-size: 36px; margin-bottom: 10px; }
+.drop-text { font-size: 12px; color: var(--text2); }
+.drop-text strong { color: var(--accent); }
+.drop-hint { font-size: 10px; color: var(--text3); margin-top: 6px; }
+.scan-log { background: var(--bg2); border-radius: var(--r); padding: 12px 14px; font-size: 11px; color: var(--text3); line-height: 1.7; max-height: 120px; overflow-y: auto; display: none; }
+.scan-log.show { display: block; }
+
+/* QR MODAL */
+.qr-wrap { background: #fff; border-radius: var(--r); padding: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.qr-url { font-size: 10px; color: var(--text3); word-break: break-all; line-height: 1.6; margin-bottom: 16px; }
+
+/* ===== TOAST ===== */
+.toast {
+  position: fixed; bottom: 20px; right: 20px; z-index: 9000;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--r); padding: 11px 16px; font-size: 12px;
+  opacity: 0; transform: translateY(8px); transition: all 0.2s;
+  pointer-events: none; max-width: 260px; box-shadow: var(--shadow);
+}
+.toast.show { opacity: 1; transform: none; }
+.toast.ok { border-color: rgba(0,255,136,0.3); color: var(--green); }
+.toast.err { border-color: rgba(255,51,85,0.3); color: var(--red); }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .main-content { padding: 16px; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .stats-row .stat-card:last-child { grid-column: span 2; }
+  .detail-header { flex-direction: column; }
+  .detail-disk-name { font-size: 20px; }
+  .header-search-wrap { display: none; }
+  .disks-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .stats-row { grid-template-columns: 1fr; }
+  .stats-row .stat-card:last-child { grid-column: auto; }
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ===== SETUP VIEW ===== -->
+<div class="view" id="view-setup">
+  <div id="view-setup" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div class="setup-wrap">
+    <h1>DiskMap <span style="color:var(--text3);font-size:14px;font-weight:400">setup</span></h1>
+    <p class="sub">Налаштуй підключення один раз — потім доступ з будь-якого пристрою</p>
+    <div class="setup-box">
+      <div class="setup-section-title">GitHub Gist</div>
+      <div class="note">
+        1. Створи <a href="https://gist.github.com" target="_blank">Secret Gist</a> з файлом <code>diskmap.json</code> і вмістом <code>{}</code><br>
+        2. Згенеруй <a href="https://github.com/settings/tokens" target="_blank">токен</a> з правом <code>gist</code>
+      </div>
+      <div class="field">
+        <label>GitHub Token</label>
+        <input type="password" id="s-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+      </div>
+      <div class="field">
+        <label>Gist ID</label>
+        <input type="text" id="s-gist" placeholder="abc123def456">
+        <div class="field-hint">Частина URL: gist.github.com/yourname/<strong>ЦЕЙ_ID</strong></div>
+      </div>
+      <div class="setup-section-title">Доступ для команди</div>
+      <div class="note">Єдиний логін і пароль — роздаєш команді. Зберігається захешовано у Gist.</div>
+      <div class="field">
+        <label>Логін (username)</label>
+        <input type="text" id="s-login" placeholder="postmen">
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input type="password" id="s-pass" placeholder="мінімум 4 символи">
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px;">
+        <button class="btn btn-primary btn-full" onclick="runSetup()">Зберегти та запустити →</button>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ===== LOGIN VIEW ===== -->
+<div class="view" id="view-login">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div class="login-wrap">
+    <div class="login-logo">Disk<span>Map</span></div>
+    <div class="login-sub">Production Storage System</div>
+    <div class="login-box">
+      <div class="field">
+        <label>Логін</label>
+        <input type="text" id="l-login" placeholder="username" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <div class="login-error" id="login-error">Невірний логін або пароль</div>
+      <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="doLogin()">Увійти →</button>
+    </div>
+    <div class="login-setup-link"><a onclick="nav('setup')">⚙ Налаштування підключення</a></div>
+  </div>
+  </div>
+</div>
+
+<!-- ===== MAIN APP ===== -->
+<div class="view" id="view-app">
+  <header class="app-header">
+    <div class="header-logo" onclick="showList()">Disk<span>Map</span></div>
+    <div class="header-search-wrap">
+      <span class="search-icon">⌕</span>
+      <input class="header-search" id="global-search" placeholder="Пошук проектів, папок..." oninput="onSearch(this.value)" onblur="setTimeout(()=>closeSearch(),200)">
+      <div class="search-dropdown" id="search-dropdown"></div>
+    </div>
+    <div class="header-sep"></div>
+    <div class="header-user"><div class="dot"></div><span id="header-username"></span></div>
+    <button class="header-btn" onclick="doLogout()">Вийти</button>
+  </header>
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Навігація</div>
+        <div class="sidebar-item active" id="nav-all" onclick="showList()">
+          <span class="item-icon">▦</span>
+          <span class="item-name">Всі диски</span>
+          <span class="item-badge" id="disks-count-badge">0</span>
+        </div>
+      </div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Диски</div>
+        <div id="sidebar-disks"></div>
+        <div class="sidebar-add">
+          <button class="btn btn-ghost btn-sm btn-full" onclick="openModal('modal-add')">+ Додати диск</button>
+        </div>
+      </div>
+    </aside>
+    <main class="main-content" id="main-content">
+      <!-- content injected here -->
+    </main>
+  </div>
+</div>
+
+</div><!-- #app -->
+
+<!-- ===== MODAL: ADD DISK ===== -->
+<div class="overlay" id="modal-add">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-add')">✕</button>
+    <h3>Новий диск</h3>
+    <div class="modal-sub">Додай диск, потім відскануй його структуру</div>
+    <div class="field"><label>Назва</label><input type="text" id="nd-name" placeholder="WD Black 4TB #1"></div>
+    <div class="field"><label>Ємність (ГБ)</label><input type="number" id="nd-cap" placeholder="4000"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="createDisk()">Створити →</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-add')">Скасувати</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: UPDATE DISK ===== -->
+<div class="overlay" id="modal-update">
+  <div class="modal modal-lg">
+    <button class="modal-close" onclick="closeModal('modal-update')">✕</button>
+    <h3>Оновити дані диску</h3>
+    <div class="modal-sub">Вибери кореневу папку зовнішнього диска — Chrome/Edge</div>
+    <div class="drop-zone" onclick="pickFolder()">
+      <div class="drop-icon">💾</div>
+      <div class="drop-text"><strong>Вибери папку диска</strong></div>
+      <div class="drop-hint">File System Access API · тільки читання · файли не завантажуються</div>
+    </div>
+    <div class="scan-log" id="scan-log"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL: QR ===== -->
+<div class="overlay" id="modal-qr">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-qr')">✕</button>
+    <h3 id="qr-name">—</h3>
+    <div class="modal-sub">Роздрукуй і наклей на диск</div>
+    <div class="qr-wrap"><canvas id="qr-canvas"></canvas></div>
+    <div class="qr-url" id="qr-url"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="downloadQR()">↓ Завантажити PNG</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-qr')">Закрити</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let S = {
+  token: '', gistId: '', isDemo: false,
+  loggedIn: false, username: '',
+  disks: {},
+  currentDisk: null,
+  authHash: '', authLogin: ''
+};
+
+const DEMO_DISKS = {
+  'd001': {
+    id:'d001', name:'WD Black 6TB #1', capacity:6000, used:4820, free:1180,
+    updatedAt: new Date(Date.now()-172800000).toISOString(),
+    notes:[
+      {author:'Олег', text:'Тут лежать всі проекти 2023-2024. Папку RAW не чіпати!', date: new Date(Date.now()-86400000).toISOString()},
+      {author:'Марія', text:'Додала нові матеріали для клієнта Acme у Projects_2024/Acme', date: new Date(Date.now()-3600000).toISOString()}
+    ],
+    tree:[
+      {name:'Projects_2023', size:1240, files:847, children:[
+        {name:'Client_Alpha',size:480,files:312,children:[{name:'RAW',size:280,files:44},{name:'Edits',size:120,files:68},{name:'Export',size:80,files:200}]},
+        {name:'Client_Beta',size:380,files:220,children:[{name:'Footage',size:200,files:30},{name:'Final',size:180,files:190}]},
+        {name:'Internal',size:380,files:315,children:[]}
+      ]},
+      {name:'Projects_2024', size:980, files:612, children:[
+        {name:'Acme_Campaign',size:460,files:280,children:[{name:'RAW',size:310,files:40},{name:'Edit_v1',size:90,files:120},{name:'Edit_v2',size:60,files:120}]},
+        {name:'Misc',size:520,files:332,children:[]}
+      ]},
+      {name:'RAW_Footage', size:1850, files:94, children:[
+        {name:'2023_Q4',size:920,files:48,children:[]},
+        {name:'2024_Q1',size:930,files:46,children:[]}
+      ]},
+      {name:'After_Effects_Cache', size:420, files:2341, children:[]},
+      {name:'Music_SFX', size:180, files:3892, children:[{name:'Licensed',size:120,files:2000},{name:'Free',size:60,files:1892}]},
+      {name:'Archives', size:150, files:23, children:[]}
+    ]
+  },
+  'd002': {
+    id:'d002', name:'Samsung T7 2TB', capacity:2000, used:440, free:1560,
+    updatedAt: new Date(Date.now()-18000000).toISOString(),
+    notes:[{author:'Іван', text:'Робочий диск для поточних монтажів. Очищати щомісяця.', date: new Date(Date.now()-7200000).toISOString()}],
+    tree:[
+      {name:'Client_Edits',size:280,files:156,children:[{name:'Ongoing',size:180,files:80},{name:'Review',size:100,files:76}]},
+      {name:'Exports',size:120,files:43,children:[{name:'H264',size:80,files:30},{name:'ProRes',size:40,files:13}]},
+      {name:'Temp',size:40,files:8,children:[]}
+    ]
+  },
+  'd003': {
+    id:'d003', name:'Seagate 8TB Backup', capacity:8000, used:7890, free:110,
+    updatedAt: new Date(Date.now()-604800000).toISOString(),
+    notes:[{author:'Олег', text:'МАЙЖЕ ПОВНИЙ! Потрібно купити новий диск для бекапів.', date: new Date(Date.now()-86400000*3).toISOString()}],
+    tree:[
+      {name:'Backup_2022',size:2400,files:12000,children:[]},
+      {name:'Backup_2023',size:3100,files:15000,children:[]},
+      {name:'Backup_2024',size:2390,files:9800,children:[]}
+    ]
+  }
+};
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  const raw = localStorage.getItem('diskmap2_cfg');
+  if (!raw) { nav('setup'); return; }
+  const cfg = JSON.parse(raw);
+  S.token = cfg.token; S.gistId = cfg.gistId;
+  S.authHash = cfg.authHash; S.authLogin = cfg.authLogin;
+  S.isDemo = cfg.isDemo || false;
+
+  // check session
+  const sess = sessionStorage.getItem('diskmap2_sess');
+  if (sess) {
+    S.loggedIn = true; S.username = sess;
+    if (S.isDemo) { S.disks = JSON.parse(JSON.stringify(DEMO_DISKS)); afterLogin(); }
+    else loadGist().then(afterLogin);
+  } else {
+    nav('login');
+  }
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+async function runSetup() {
+  const token = q('s-token').value.trim();
+  const gistId = q('s-gist').value.trim();
+  const login = q('s-login').value.trim();
+  const pass = q('s-pass').value.trim();
+  if (!token||!gistId||!login||!pass) { toast('Заповни всі поля','err'); return; }
+  if (pass.length < 4) { toast('Пароль мінімум 4 символи','err'); return; }
+  const hash = await sha256(login + ':' + pass);
+  localStorage.setItem('diskmap2_cfg', JSON.stringify({token,gistId,authHash:hash,authLogin:login}));
+  S.token=token; S.gistId=gistId; S.authHash=hash; S.authLogin=login;
+  toast('Налаштовано! Тепер увійди','ok');
+  nav('login');
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+async function doLogin() {
+  const login = q('l-login').value.trim();
+  const pass = q('l-pass').value.trim();
+
+  // demo shortcut
+  if (login==='demo' && pass==='demo') {
+    S.isDemo=true; S.loggedIn=true; S.username='demo';
+    sessionStorage.setItem('diskmap2_sess','demo');
+    S.disks = JSON.parse(JSON.stringify(DEMO_DISKS));
+    afterLogin(); return;
+  }
+
+  if (!S.authHash) { toast('Спочатку налаштуй систему','err'); return; }
+  const hash = await sha256(login + ':' + pass);
+  if (hash !== S.authHash) {
+    q('login-error').classList.add('show'); return;
+  }
+  q('login-error').classList.remove('show');
+  S.loggedIn=true; S.username=login;
+  sessionStorage.setItem('diskmap2_sess', login);
+  if (S.isDemo) { afterLogin(); return; }
+  await loadGist();
+  afterLogin();
+}
+
+function doLogout() {
+  sessionStorage.removeItem('diskmap2_sess');
+  S.loggedIn=false; S.username='';
+  nav('login');
+}
+
+function afterLogin() {
+  q('header-username').textContent = S.username;
+  nav('app');
+  // check URL param
+  const params = new URLSearchParams(location.search);
+  const diskId = params.get('disk');
+  if (diskId && S.disks[diskId]) showDisk(diskId);
+  else showList();
+}
+
+// ============================================================
+// GIST
+// ============================================================
+async function loadGist() {
+  if (S.isDemo) return;
+  try {
+    const r = await fetch(`https://api.github.com/gists/${S.gistId}`,
+      {headers:{Authorization:`token ${S.token}`}});
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    const f = d.files['diskmap.json'];
+    if (f && f.content) S.disks = JSON.parse(f.content);
+  } catch(e) { toast('Помилка Gist: '+e.message,'err'); }
+}
+
+async function saveGist() {
+  if (S.isDemo) { toast('Demo — дані не зберігаються',''); return; }
+  const r = await fetch(`https://api.github.com/gists/${S.gistId}`, {
+    method:'PATCH',
+    headers:{Authorization:`token ${S.token}`,'Content-Type':'application/json'},
+    body: JSON.stringify({files:{'diskmap.json':{content:JSON.stringify(S.disks,null,2)}}})
+  });
+  if (!r.ok) throw new Error('Save HTTP '+r.status);
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function nav(viewId) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  q('view-'+viewId).classList.add('active');
+}
+
+function showList() {
+  S.currentDisk = null;
+  updateSidebar();
+  q('sidebar-disks') && document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
+  q('nav-all').classList.add('active');
+  renderList();
+}
+
+function showDisk(id) {
+  S.currentDisk = id;
+  updateSidebar();
+  document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
+  const si = document.querySelector(`.sidebar-item[data-disk="${id}"]`);
+  if (si) si.classList.add('active');
+  q('nav-all').classList.remove('active');
+  renderDetail(id);
+}
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+function updateSidebar() {
+  const disks = Object.values(S.disks);
+  q('disks-count-badge').textContent = disks.length;
+  const el = q('sidebar-disks');
+  el.innerHTML = disks.map(d => {
+    const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
+    return `<div class="sidebar-item" data-disk="${d.id}" onclick="showDisk('${d.id}')">
+      <span class="item-icon">💾</span>
+      <span class="item-name">${esc(d.name)}</span>
+      <span class="item-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// RENDER LIST
+// ============================================================
+function renderList() {
+  const disks = Object.values(S.disks);
+  const main = q('main-content');
+  let html = `<div class="page-title">Всі диски</div>
+    <div class="page-sub">${disks.length} дисків · ${S.isDemo ? 'demo режим' : 'синхронізовано з Gist'}</div>
+    <div class="disks-grid">`;
+  disks.forEach(d => {
+    const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
+    const cls = pct>=90?'full':pct>=70?'warn':'ok';
+    html += `<div class="disk-card" onclick="showDisk('${d.id}')">
+      <div class="dc-top"><div class="dc-icon">💾</div><div class="dc-badge badge-${cls}">${cls.toUpperCase()}</div></div>
+      <div class="dc-name">${esc(d.name)}</div>
+      <div class="dc-id">id: ${d.id}</div>
+      <div class="dc-bar"><div class="dc-bar-fill fill-${cls}" style="width:${pct}%"></div></div>
+      <div class="dc-stats"><span>${fmtGB(d.used)} / ${fmtGB(d.capacity)}</span><span>${pct}%</span></div>
+      <div class="dc-updated">↻ ${fmtAgo(d.updatedAt)}</div>
+    </div>`;
+  });
+  html += `<div class="disk-card disk-card-add" onclick="openModal('modal-add')">
+    <div style="font-size:28px">+</div><div style="font-size:11px;letter-spacing:.5px">Додати диск</div>
+  </div></div>`;
+  main.innerHTML = html;
+}
+
+// ============================================================
+// RENDER DETAIL
+// ============================================================
+function renderDetail(id) {
+  const d = S.disks[id];
+  if (!d) { showList(); return; }
+  const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
+  const cls = pct>=90?'full':pct>=70?'warn':'ok';
+  const fillCls = pct>=90?'fill-full':pct>=70?'fill-warn':'fill-ok';
+  const valCls = pct>=90?'style="color:var(--red)"':pct>=70?'style="color:var(--yellow)"':'style="color:var(--green)"';
+
+  const main = q('main-content');
+  main.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title-wrap">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;cursor:pointer" onclick="showList()">← Всі диски</div>
+        <div class="detail-disk-name">${esc(d.name)}</div>
+        <div class="detail-disk-id">id: ${d.id} · оновлено ${fmtAgo(d.updatedAt)}</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary btn-sm" onclick="openUpdateModal()">↑ Оновити</button>
+        <button class="btn btn-ghost btn-sm" onclick="showQR('${id}')">QR</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmDelete('${id}')">Видалити</button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Всього</div><div class="stat-value">${fmtGB(d.capacity)}</div></div>
+      <div class="stat-card"><div class="stat-label">Використано</div><div class="stat-value">${fmtGB(d.used)}</div></div>
+      <div class="stat-card"><div class="stat-label">Вільно</div><div class="stat-value" ${valCls}>${fmtGB(d.free)}</div></div>
+    </div>
+
+    <div class="usage-card">
+      <div class="usage-top"><span>Заповненість</span><span>${pct}%</span></div>
+      <div class="usage-bar"><div class="usage-bar-fill ${fillCls}" style="width:${pct}%"></div></div>
+    </div>
+
+    <div class="tree-card">
+      <div class="tree-header">
+        <div class="tree-title">Структура папок</div>
+        <div style="font-size:10px;color:var(--text3)">${(d.tree||[]).length} папок у корені</div>
+      </div>
+      <div class="tree-body" id="tree-body">${renderTree(d.tree||[], d.used||1, 0)}</div>
+    </div>
+
+    <div class="notes-card">
+      <div class="notes-header">
+        <div class="notes-title">Нотатки команди</div>
+        <div style="font-size:10px;color:var(--text3)">${(d.notes||[]).length} записів</div>
+      </div>
+      <div class="notes-list" id="notes-list">${renderNotes(d.notes||[])}</div>
+      <div class="notes-add">
+        <textarea id="note-input" placeholder="Додати нотатку для колег..."></textarea>
+        <button class="btn btn-primary btn-sm" onclick="addNote('${id}')">Додати</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// TREE RENDERER
+// ============================================================
+function renderTree(nodes, totalSize, depth) {
+  if (!nodes || !nodes.length) return '<div style="padding:12px 18px;font-size:11px;color:var(--text3)">Немає даних. Натисни «Оновити».</div>';
+  return nodes.map(node => {
+    const pct = totalSize ? Math.round(node.size/totalSize*100) : 0;
+    const hasChildren = node.children && node.children.length > 0;
+    const uid = 'tree_' + Math.random().toString(36).slice(2);
+    const indentPx = depth * 16 + 18;
+    return `<div class="tree-node">
+      <div class="tree-row" onclick="toggleTree('${uid}',this)">
+        <div class="tree-indent" style="width:${indentPx}px"></div>
+        <div class="tree-toggle">${hasChildren ? '▶' : ' '}</div>
+        <div class="tree-ico">${hasChildren ? '📁' : '📄'}</div>
+        <div class="tree-name">${esc(node.name)}</div>
+        <div class="tree-count">${node.files ? node.files.toLocaleString()+' ф.' : ''}</div>
+        <div class="tree-bar-mini"><div class="tree-bar-fill" style="width:${Math.min(pct*3,100)}%"></div></div>
+        <div class="tree-size">${fmtGB(node.size)}</div>
+      </div>
+      ${hasChildren ? `<div class="tree-children" id="${uid}">${renderTree(node.children, totalSize, depth+1)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function toggleTree(uid, row) {
+  const el = document.getElementById(uid);
+  if (!el) return;
+  const toggle = row.querySelector('.tree-toggle');
+  const open = el.classList.toggle('open');
+  if (toggle) toggle.textContent = open ? '▼' : '▶';
+}
+
+// ============================================================
+// NOTES
+// ============================================================
+function renderNotes(notes) {
+  if (!notes.length) return '<div class="note-empty">Поки немає нотаток</div>';
+  return [...notes].reverse().map(n => `
+    <div class="note-item">
+      <div class="note-meta">
+        <span class="note-author">${esc(n.author)}</span>
+        <span class="note-date">${fmtAgo(n.date)}</span>
+      </div>
+      <div class="note-text">${esc(n.text)}</div>
+    </div>
+  `).join('');
+}
+
+async function addNote(diskId) {
+  const input = q('note-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const disk = S.disks[diskId];
+  if (!disk.notes) disk.notes = [];
+  disk.notes.push({ author: S.username, text, date: new Date().toISOString() });
+  input.value = '';
+  try {
+    await saveGist();
+    q('notes-list').innerHTML = renderNotes(disk.notes);
+    toast('Нотатку додано','ok');
+  } catch(e) { toast('Помилка збереження','err'); }
+}
+
+// ============================================================
+// SEARCH
+// ============================================================
+function onSearch(val) {
+  const dd = q('search-dropdown');
+  if (!val || val.length < 2) { dd.classList.remove('open'); return; }
+  const results = [];
+  const q2 = val.toLowerCase();
+  Object.values(S.disks).forEach(disk => {
+    searchTree(disk.tree||[], q2, disk, [], results);
+  });
+  if (!results.length) {
+    dd.innerHTML = `<div class="search-empty">Нічого не знайдено</div>`;
+  } else {
+    dd.innerHTML = results.slice(0,12).map(r => `
+      <div class="search-result-item" onclick="showDisk('${r.diskId}')">
+        <div class="sri-disk">💾 ${esc(r.diskName)}</div>
+        <div class="sri-path">${highlightMatch(r.path, val)}</div>
+        <div class="sri-size">${fmtGB(r.size)} · ${r.files ? r.files.toLocaleString()+' файлів' : ''}</div>
+      </div>`).join('');
+  }
+  dd.classList.add('open');
+}
+
+function searchTree(nodes, query, disk, pathArr, results) {
+  if (!nodes) return;
+  nodes.forEach(node => {
+    const fullPath = [...pathArr, node.name].join(' / ');
+    if (node.name.toLowerCase().includes(query)) {
+      results.push({ diskId:disk.id, diskName:disk.name, path:fullPath, size:node.size, files:node.files });
+    }
+    if (node.children) searchTree(node.children, query, disk, [...pathArr, node.name], results);
+  });
+}
+
+function highlightMatch(text, query) {
+  const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+  return esc(text).replace(re, '<mark>$1</mark>');
+}
+
+function closeSearch() { q('search-dropdown').classList.remove('open'); }
+
+// ============================================================
+// DISK CRUD
+// ============================================================
+async function createDisk() {
+  const name = q('nd-name').value.trim();
+  const cap = parseInt(q('nd-cap').value)||0;
+  if (!name) { toast('Введи назву','err'); return; }
+  const id = 'disk-' + Date.now().toString(36);
+  S.disks[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), tree:[], notes:[] };
+  try {
+    await saveGist();
+    closeModal('modal-add');
+    q('nd-name').value=''; q('nd-cap').value='';
+    toast('Диск додано','ok');
+    showDisk(id);
+  } catch(e) { toast('Помилка','err'); }
+}
+
+async function confirmDelete(id) {
+  if (!confirm('Видалити запис про цей диск?')) return;
+  delete S.disks[id];
+  try { await saveGist(); toast('Видалено','ok'); showList(); }
+  catch(e) { toast('Помилка','err'); }
+}
+
+// ============================================================
+// UPDATE (File System Access)
+// ============================================================
+function openUpdateModal() { openModal('modal-update'); }
+
+async function pickFolder() {
+  if (!window.showDirectoryPicker) {
+    toast('Потрібен Chrome або Edge','err'); return;
+  }
+  let dir;
+  try { dir = await window.showDirectoryPicker(); }
+  catch(e) { return; }
+
+  const log = q('scan-log');
+  log.classList.add('show'); log.innerHTML = '';
+
+  function logLine(msg) { log.innerHTML += msg + '\n'; log.scrollTop = log.scrollHeight; }
+
+  try {
+    logLine('⟳ Починаємо сканування...');
+    const { tree, totalBytes } = await scanDir(dir, 0, logLine);
+    const usedGB = Math.round(totalBytes/1024/1024/1024*100)/100;
+    const d = S.disks[S.currentDisk];
+    d.tree = tree;
+    d.used = usedGB;
+    d.free = Math.max((d.capacity||0) - usedGB, 0);
+    d.updatedAt = new Date().toISOString();
+    logLine('↑ Збереження...');
+    await saveGist();
+    log.classList.remove('show');
+    closeModal('modal-update');
+    toast('Оновлено і збережено!','ok');
+    renderDetail(S.currentDisk);
+    updateSidebar();
+  } catch(e) {
+    log.classList.remove('show');
+    toast('Помилка: '+e.message,'err');
+  }
+}
+
+async function scanDir(handle, depth, logFn) {
+  let totalBytes = 0;
+  const tree = [];
+  for await (const [name, h] of handle.entries()) {
+    if (name.startsWith('.')) continue;
+    if (h.kind === 'directory') {
+      if (logFn && depth < 2) logFn(`⟳ ${name}`);
+      const sub = await scanDir(h, depth+1, depth < 1 ? logFn : null);
+      totalBytes += sub.totalBytes;
+      tree.push({ name, size: Math.round(sub.totalBytes/1024/1024/1024*1000)/1000, files: sub.fileCount, children: depth < 3 ? sub.tree : [] });
+    } else {
+      try { const f = await h.getFile(); totalBytes += f.size; }
+      catch(e){}
+    }
+  }
+  // sort by size desc
+  tree.sort((a,b)=>b.size-a.size);
+  const fileCount = tree.reduce((s,n)=>s+(n.files||0),0);
+  return { tree, totalBytes, fileCount };
+}
+
+// ============================================================
+// QR
+// ============================================================
+function showQR(id) {
+  const d = S.disks[id];
+  const url = location.origin + location.pathname + '?disk=' + id;
+  q('qr-name').textContent = d.name;
+  q('qr-url').textContent = url;
+  QRCode.toCanvas(q('qr-canvas'), url, { width:220, margin:0, color:{dark:'#000',light:'#fff'} });
+  openModal('modal-qr');
+}
+
+function downloadQR() {
+  const a = document.createElement('a');
+  a.download = 'qr-' + (S.disks[S.currentDisk]?.name||'disk').replace(/\s+/g,'_') + '.png';
+  a.href = q('qr-canvas').toDataURL('image/png');
+  a.click();
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function q(id) { return document.getElementById(id); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtGB(gb) {
+  if (gb===undefined||gb===null) return '—';
+  if (gb >= 1000) return (gb/1000).toFixed(1)+' TB';
+  if (gb < 1 && gb > 0) return Math.round(gb*1024)+' MB';
+  return gb.toFixed ? (gb < 10 ? gb.toFixed(1) : Math.round(gb))+' GB' : gb+' GB';
+}
+
+function fmtAgo(iso) {
+  if (!iso) return 'ніколи';
+  const d = new Date(iso), diff = (Date.now()-d)/1000;
+  if (diff<60) return 'щойно';
+  if (diff<3600) return Math.round(diff/60)+' хв тому';
+  if (diff<86400) return Math.round(diff/3600)+' год тому';
+  return Math.round(diff/86400)+' дн тому';
+}
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function openModal(id) { q(id).classList.add('open'); }
+function closeModal(id) { q(id).classList.remove('open'); }
+
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); });
+});
+
+let _tt;
+function toast(msg, type) {
+  const t = q('toast');
+  t.textContent = msg; t.className = 'toast show ' + (type||'');
+  clearTimeout(_tt); _tt = setTimeout(()=>t.classList.remove('show'), 3000);
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+init();
+</script>
+</body>
+</html>
