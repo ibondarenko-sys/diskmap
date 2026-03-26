@@ -621,22 +621,54 @@ const DEMO_DISKS = {
 // INIT
 // ============================================================
 function init() {
-  const raw = localStorage.getItem('diskmap2_cfg');
-  if (!raw) { nav('setup'); return; }
-  const cfg = JSON.parse(raw);
-  S.token = cfg.token; S.gistId = cfg.gistId;
-  S.authHash = cfg.authHash; S.authLogin = cfg.authLogin;
-  S.isDemo = cfg.isDemo || false;
+  const params = new URLSearchParams(location.search);
+  const diskParam = params.get('disk');
+  const gistParam = params.get('g'); // gist id може бути в URL
 
-  // check session
-  const sess = sessionStorage.getItem('diskmap2_sess');
-  if (sess) {
-    S.loggedIn = true; S.username = sess;
-    if (S.isDemo) { S.disks = JSON.parse(JSON.stringify(DEMO_DISKS)); afterLogin(); }
-    else loadGist().then(afterLogin);
-  } else {
-    nav('login');
+  const raw = localStorage.getItem('diskmap2_cfg');
+  if (raw) {
+    const cfg = JSON.parse(raw);
+    S.token = cfg.token; S.gistId = cfg.gistId;
+    S.authHash = cfg.authHash; S.authLogin = cfg.authLogin;
+    S.isDemo = cfg.isDemo || false;
+
+    const sess = sessionStorage.getItem('diskmap2_sess');
+    if (sess) {
+      S.loggedIn = true; S.username = sess;
+      if (S.isDemo) { S.disks = JSON.parse(JSON.stringify(DEMO_DISKS)); afterLogin(); }
+      else loadGist().then(afterLogin);
+    } else {
+      nav('login');
+    }
+    return;
   }
+
+  // Немає локального конфіга — прийшли по QR з іншого пристрою
+  if (diskParam || gistParam) {
+    // спробуємо завантажити конфіг з Gist якщо є g= в URL
+    if (gistParam) {
+      S.gistId = gistParam;
+      fetchAuthFromGist(gistParam).then(() => nav('login'));
+    } else {
+      nav('login');
+    }
+  } else {
+    nav('setup');
+  }
+}
+
+async function fetchAuthFromGist(gistId) {
+  try {
+    const r = await fetch('https://api.github.com/gists/' + gistId);
+    if (!r.ok) return;
+    const d = await r.json();
+    const f = d.files['diskmap.json'];
+    if (!f) return;
+    const data = JSON.parse(f.content);
+    if (data._auth) {
+      S.authHash = data._auth.hash;
+    }
+  } catch(e) {}
 }
 
 // ============================================================
@@ -647,12 +679,25 @@ async function runSetup() {
   const gistId = q('s-gist').value.trim();
   const login = q('s-login').value.trim();
   const pass = q('s-pass').value.trim();
-  if (!token||!gistId||!login||!pass) { toast('Заповни всі поля','err'); return; }
-  if (pass.length < 4) { toast('Пароль мінімум 4 символи','err'); return; }
+  if (!token || !gistId || !login || !pass) { toast('Заповни всі поля', 'err'); return; }
+  if (pass.length < 4) { toast('Пароль мінімум 4 символи', 'err'); return; }
   const hash = await sha256(login + ':' + pass);
-  localStorage.setItem('diskmap2_cfg', JSON.stringify({token,gistId,authHash:hash,authLogin:login}));
-  S.token=token; S.gistId=gistId; S.authHash=hash; S.authLogin=login;
-  toast('Налаштовано! Тепер увійди','ok');
+  localStorage.setItem('diskmap2_cfg', JSON.stringify({ token, gistId, authHash: hash, authLogin: login }));
+  S.token = token; S.gistId = gistId; S.authHash = hash; S.authLogin = login;
+
+  // зберігаємо auth hash у Gist щоб телефони по QR могли логінитись
+  try {
+    await loadGist(); // підвантажуємо існуючі диски якщо є
+    if (!S.disks._auth) {
+      S.disks._auth = { hash };
+      await saveGist();
+    } else if (S.disks._auth.hash !== hash) {
+      S.disks._auth = { hash };
+      await saveGist();
+    }
+  } catch(e) {}
+
+  toast('Налаштовано! Тепер увійди', 'ok');
   nav('login');
 }
 
@@ -663,23 +708,26 @@ async function doLogin() {
   const login = q('l-login').value.trim();
   const pass = q('l-pass').value.trim();
 
-  // demo shortcut
-  if (login==='demo' && pass==='demo') {
-    S.isDemo=true; S.loggedIn=true; S.username='demo';
-    sessionStorage.setItem('diskmap2_sess','demo');
+  if (login === 'demo' && pass === 'demo') {
+    S.isDemo = true; S.loggedIn = true; S.username = 'demo';
+    sessionStorage.setItem('diskmap2_sess', 'demo');
     S.disks = JSON.parse(JSON.stringify(DEMO_DISKS));
     afterLogin(); return;
   }
 
-  if (!S.authHash) { toast('Спочатку налаштуй систему','err'); return; }
+  if (!S.authHash) {
+    q('login-error').textContent = 'Конфігурацію не знайдено. Зверніться до адміністратора.';
+    q('login-error').classList.add('show'); return;
+  }
+
   const hash = await sha256(login + ':' + pass);
   if (hash !== S.authHash) {
+    q('login-error').textContent = 'Невірний логін або пароль';
     q('login-error').classList.add('show'); return;
   }
   q('login-error').classList.remove('show');
-  S.loggedIn=true; S.username=login;
+  S.loggedIn = true; S.username = login;
   sessionStorage.setItem('diskmap2_sess', login);
-  if (S.isDemo) { afterLogin(); return; }
   await loadGist();
   afterLogin();
 }
@@ -705,14 +753,15 @@ function afterLogin() {
 // ============================================================
 async function loadGist() {
   if (S.isDemo) return;
+  // якщо є токен — авторизований запит, якщо ні — публічний (Secret Gist доступний за прямим URL)
+  const headers = S.token ? { Authorization: 'token ' + S.token } : {};
   try {
-    const r = await fetch(`https://api.github.com/gists/${S.gistId}`,
-      {headers:{Authorization:`token ${S.token}`}});
-    if (!r.ok) throw new Error('HTTP '+r.status);
+    const r = await fetch('https://api.github.com/gists/' + S.gistId, { headers });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     const f = d.files['diskmap.json'];
     if (f && f.content) S.disks = JSON.parse(f.content);
-  } catch(e) { toast('Помилка Gist: '+e.message,'err'); }
+  } catch(e) { toast('Помилка завантаження: ' + e.message, 'err'); }
 }
 
 async function saveGist() {
@@ -1101,7 +1150,8 @@ async function scanDir(handle, depth, logFn) {
 // ============================================================
 function showQR(id) {
   const d = S.disks[id];
-  const url = location.origin + location.pathname + '?disk=' + id;
+  const base = location.origin + location.pathname;
+  const url = base + '?g=' + S.gistId + '&disk=' + id;
   q('qr-name').textContent = d.name;
   q('qr-url').textContent = url;
   openModal('modal-qr');
