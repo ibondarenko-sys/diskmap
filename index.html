@@ -442,8 +442,9 @@ body::before {
         <label>Пароль</label>
         <input type="password" id="s-pass" placeholder="мінімум 4 символи">
       </div>
-      <div style="margin-top:20px;display:flex;gap:10px;">
+      <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-full" onclick="runSetup()">Зберегти та запустити →</button>
+        <button class="btn btn-ghost btn-full" onclick="repairGist()" style="font-size:11px">🔧 Перевірити і відновити Gist</button>
       </div>
     </div>
   </div>
@@ -662,7 +663,43 @@ function init() {
   }
 }
 
-async function fetchAuthFromGist(gistId) {
+async function repairGist() {
+  const token = q('s-token').value.trim();
+  const gistId = q('s-gist').value.trim();
+  if (!token || !gistId) { toast('Спочатку введи токен і Gist ID', 'err'); return; }
+
+  toast('Читаємо Gist...', '');
+  try {
+    const r = await fetch('https://api.github.com/gists/' + gistId, {
+      headers: { Authorization: 'token ' + token }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — перевір токен і Gist ID');
+    const d = await r.json();
+    const f = d.files['diskmap.json'];
+
+    if (!f) {
+      toast('Файл diskmap.json не знайдено в Gist', 'err'); return;
+    }
+
+    let parsed = null;
+    try { parsed = JSON.parse(f.content); } catch(e) { parsed = null; }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      // зіпсований JSON — скидаємо до порожнього
+      if (!confirm('Файл diskmap.json пошкоджений. Скинути до порожнього? Диски будуть втрачені.')) return;
+      const fix = await fetch('https://api.github.com/gists/' + gistId, {
+        method: 'PATCH',
+        headers: { Authorization: 'token ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: { 'diskmap.json': { content: '{}' } } })
+      });
+      if (!fix.ok) throw new Error('Не вдалось записати');
+      toast('Gist відновлено. Тепер налаштуй заново.', 'ok');
+    } else {
+      const diskCount = Object.values(parsed).filter(v => v && v.id).length;
+      toast('Gist OK. Знайдено ' + diskCount + ' дисків.', 'ok');
+    }
+  } catch(e) { toast('Помилка: ' + e.message, 'err'); }
+}
   try {
     const r = await fetch('https://api.github.com/gists/' + gistId);
     if (!r.ok) return;
@@ -686,23 +723,27 @@ async function runSetup() {
   const pass = q('s-pass').value.trim();
   if (!token || !gistId || !login || !pass) { toast('Заповни всі поля', 'err'); return; }
   if (pass.length < 4) { toast('Пароль мінімум 4 символи', 'err'); return; }
+
   const hash = await sha256(login + ':' + pass);
+  // зберігаємо локально
   localStorage.setItem('diskmap2_cfg', JSON.stringify({ token, gistId, authHash: hash, authLogin: login }));
   S.token = token; S.gistId = gistId; S.authHash = hash; S.authLogin = login;
 
-  // зберігаємо auth hash у Gist щоб телефони по QR могли логінитись
+  // завантажуємо існуючі дані з Gist щоб не затерти диски
   try {
-    await loadGist(); // підвантажуємо існуючі диски якщо є
-    if (!S.disks._auth) {
-      S.disks._auth = { hash };
-      await saveGist();
-    } else if (S.disks._auth.hash !== hash) {
-      S.disks._auth = { hash };
-      await saveGist();
-    }
+    await loadGist();
   } catch(e) {}
 
-  toast('Налаштовано! Тепер увійди', 'ok');
+  // оновлюємо тільки _auth, не чіпаємо диски
+  S.disks._auth = { hash };
+
+  try {
+    await saveGist();
+    toast('Налаштовано! Тепер увійди', 'ok');
+  } catch(e) {
+    toast('Помилка збереження: ' + e.message, 'err');
+    return;
+  }
   nav('login');
 }
 
@@ -758,14 +799,25 @@ function afterLogin() {
 // ============================================================
 async function loadGist() {
   if (S.isDemo) return;
-  // якщо є токен — авторизований запит, якщо ні — публічний (Secret Gist доступний за прямим URL)
   const headers = S.token ? { Authorization: 'token ' + S.token } : {};
   try {
     const r = await fetch('https://api.github.com/gists/' + S.gistId, { headers });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     const f = d.files['diskmap.json'];
-    if (f && f.content) S.disks = JSON.parse(f.content);
+    if (!f || !f.content) return;
+    const content = f.content.trim();
+    if (!content || content === '') return;
+    try {
+      const parsed = JSON.parse(content);
+      // перевіряємо що це об'єкт, а не масив чи примітив
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        S.disks = parsed;
+      }
+    } catch(parseErr) {
+      toast('Помилка читання даних з Gist. Можливо файл пошкоджений.', 'err');
+      console.error('JSON parse error:', parseErr, 'Content:', content.slice(0, 200));
+    }
   } catch(e) { toast('Помилка завантаження: ' + e.message, 'err'); }
 }
 
