@@ -67,7 +67,7 @@ body::before {
 @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
 
 /* ===== LOGIN ===== */
-#view-login {
+#view-login.active {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -106,7 +106,7 @@ body::before {
 .login-setup-link a { color: var(--accent); cursor: pointer; text-decoration: none; }
 
 /* ===== SETUP ===== */
-#view-setup {
+#view-setup.active {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -393,6 +393,10 @@ body::before {
   .stats-row .stat-card:last-child { grid-column: auto; }
 }
 
+.tree-exts { display: flex; gap: 4px; flex-wrap: wrap; margin-right: 8px; flex-shrink: 0; max-width: 200px; }
+.ext-badge { font-size: 9px; padding: 2px 5px; border-radius: 3px; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
+.ext-cnt { opacity: 0.7; font-weight: 400; }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -404,7 +408,7 @@ body::before {
 
 <!-- ===== SETUP VIEW ===== -->
 <div class="view" id="view-setup">
-  <div id="view-setup" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
   <div class="setup-wrap">
     <h1>DiskMap <span style="color:var(--text3);font-size:14px;font-weight:400">setup</span></h1>
     <p class="sub">Налаштуй підключення один раз — потім доступ з будь-якого пристрою</p>
@@ -541,7 +545,7 @@ body::before {
     <button class="modal-close" onclick="closeModal('modal-qr')">✕</button>
     <h3 id="qr-name">—</h3>
     <div class="modal-sub">Роздрукуй і наклей на диск</div>
-    <div class="qr-wrap"><canvas id="qr-canvas"></canvas></div>
+    <div class="qr-wrap"><img id="qr-img" style="width:220px;height:220px" alt="QR"></div>
     <div class="qr-url" id="qr-url"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="downloadQR()">↓ Завантажити PNG</button>
@@ -856,22 +860,50 @@ function renderDetail(id) {
 function renderTree(nodes, totalSize, depth) {
   if (!nodes || !nodes.length) return '<div style="padding:12px 18px;font-size:11px;color:var(--text3)">Немає даних. Натисни «Оновити».</div>';
   return nodes.map(node => {
-    const pct = totalSize ? Math.round(node.size/totalSize*100) : 0;
+    const pct = totalSize ? Math.round(node.size / totalSize * 100) : 0;
     const hasChildren = node.children && node.children.length > 0;
     const uid = 'tree_' + Math.random().toString(36).slice(2);
     const indentPx = depth * 16 + 18;
-    return `<div class="tree-node">
-      <div class="tree-row" onclick="toggleTree('${uid}',this)">
-        <div class="tree-indent" style="width:${indentPx}px"></div>
-        <div class="tree-toggle">${hasChildren ? '▶' : ' '}</div>
-        <div class="tree-ico">${hasChildren ? '📁' : '📄'}</div>
-        <div class="tree-name">${esc(node.name)}</div>
-        <div class="tree-count">${node.files ? node.files.toLocaleString()+' ф.' : ''}</div>
-        <div class="tree-bar-mini"><div class="tree-bar-fill" style="width:${Math.min(pct*3,100)}%"></div></div>
-        <div class="tree-size">${fmtGB(node.size)}</div>
-      </div>
-      ${hasChildren ? `<div class="tree-children" id="${uid}">${renderTree(node.children, totalSize, depth+1)}</div>` : ''}
-    </div>`;
+    const extBadges = renderExtBadges(node.exts);
+    return '<div class="tree-node">' +
+      '<div class="tree-row" onclick="toggleTree(\'' + uid + '\',this)">' +
+        '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
+        '<div class="tree-toggle">' + (hasChildren ? '▶' : '&nbsp;') + '</div>' +
+        '<div class="tree-ico">' + (hasChildren ? '📁' : '📄') + '</div>' +
+        '<div class="tree-name">' + esc(node.name) + '</div>' +
+        '<div class="tree-exts">' + extBadges + '</div>' +
+        '<div class="tree-count">' + (node.files ? node.files.toLocaleString() + ' ф.' : '') + '</div>' +
+        '<div class="tree-bar-mini"><div class="tree-bar-fill" style="width:' + Math.min(pct * 3, 100) + '%"></div></div>' +
+        '<div class="tree-size">' + fmtGB(node.size) + '</div>' +
+      '</div>' +
+      (hasChildren ? '<div class="tree-children" id="' + uid + '">' + renderTree(node.children, totalSize, depth + 1) + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+// Ext badge colors by category
+const EXT_CATS = {
+  video: { exts: ['mp4','mov','avi','mkv','mxf','r3d','braw','prproj','aep','ppj','wmv','webm','m4v'], color: '#ff6b35', bg: 'rgba(255,107,53,0.12)' },
+  audio: { exts: ['wav','mp3','aiff','aif','flac','ogg','m4a','aac','mid','midi'], color: '#00d4ff', bg: 'rgba(0,212,255,0.12)' },
+  image: { exts: ['jpg','jpeg','png','tiff','tif','psd','ai','svg','raw','arw','cr2','nef','webp','heic'], color: '#00ff88', bg: 'rgba(0,255,136,0.12)' },
+  doc:   { exts: ['pdf','doc','docx','xls','xlsx','txt','csv','xml','json'], color: '#ffcc00', bg: 'rgba(255,204,0,0.12)' },
+  arch:  { exts: ['zip','rar','7z','tar','gz'], color: '#aa88ff', bg: 'rgba(170,136,255,0.12)' },
+};
+
+function getExtCat(ext) {
+  for (const [cat, info] of Object.entries(EXT_CATS)) {
+    if (info.exts.includes(ext)) return info;
+  }
+  return { color: '#7a8fa0', bg: 'rgba(122,143,160,0.1)' };
+}
+
+function renderExtBadges(exts) {
+  if (!exts || !Object.keys(exts).length) return '';
+  // top 4 by count
+  const sorted = Object.entries(exts).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  return sorted.map(([ext, cnt]) => {
+    const cat = getExtCat(ext);
+    return '<span class="ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + ext + ' <span class="ext-cnt">' + cnt + '</span></span>';
   }).join('');
 }
 
@@ -1024,22 +1056,44 @@ async function pickFolder() {
 async function scanDir(handle, depth, logFn) {
   let totalBytes = 0;
   const tree = [];
+  let directFiles = 0;
+  const exts = {};
+
   for await (const [name, h] of handle.entries()) {
-    if (name.startsWith('.')) continue;
+    if (name.startsWith('.') || name === 'System Volume Information' || name === '$RECYCLE.BIN') continue;
     if (h.kind === 'directory') {
-      if (logFn && depth < 2) logFn(`⟳ ${name}`);
-      const sub = await scanDir(h, depth+1, depth < 1 ? logFn : null);
-      totalBytes += sub.totalBytes;
-      tree.push({ name, size: Math.round(sub.totalBytes/1024/1024/1024*1000)/1000, files: sub.fileCount, children: depth < 3 ? sub.tree : [] });
+      if (logFn && depth < 3) logFn('⟳ ' + name);
+      try {
+        const sub = await scanDir(h, depth + 1, depth < 1 ? logFn : null);
+        totalBytes += sub.totalBytes;
+        for (const [ext, cnt] of Object.entries(sub.exts)) {
+          exts[ext] = (exts[ext] || 0) + cnt;
+        }
+        tree.push({
+          name,
+          size: Math.round(sub.totalBytes / 1024 / 1024 / 1024 * 1000) / 1000,
+          files: sub.fileCount,
+          exts: sub.exts,
+          children: depth < 4 ? sub.tree : []
+        });
+      } catch(e) {}
     } else {
-      try { const f = await h.getFile(); totalBytes += f.size; }
-      catch(e){}
+      try {
+        const f = await h.getFile();
+        totalBytes += f.size;
+        directFiles++;
+        const dot = name.lastIndexOf('.');
+        if (dot > 0) {
+          const ext = name.slice(dot + 1).toLowerCase();
+          exts[ext] = (exts[ext] || 0) + 1;
+        }
+      } catch(e) {}
     }
   }
-  // sort by size desc
-  tree.sort((a,b)=>b.size-a.size);
-  const fileCount = tree.reduce((s,n)=>s+(n.files||0),0);
-  return { tree, totalBytes, fileCount };
+
+  tree.sort((a, b) => b.size - a.size);
+  const fileCount = directFiles + tree.reduce((s, n) => s + (n.files || 0), 0);
+  return { tree, totalBytes, fileCount, exts };
 }
 
 // ============================================================
@@ -1050,14 +1104,21 @@ function showQR(id) {
   const url = location.origin + location.pathname + '?disk=' + id;
   q('qr-name').textContent = d.name;
   q('qr-url').textContent = url;
-  QRCode.toCanvas(q('qr-canvas'), url, { width:220, margin:0, color:{dark:'#000',light:'#fff'} });
   openModal('modal-qr');
+  QRCode.toDataURL(url, { width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' } }, function(err, dataUrl) {
+    if (err) { toast('QR помилка: ' + err, 'err'); return; }
+    q('qr-img').src = dataUrl;
+    q('qr-img')._dataUrl = dataUrl; // store for download
+  });
 }
 
 function downloadQR() {
+  const img = q('qr-img');
+  const src = img._dataUrl || img.src;
+  if (!src || src === window.location.href) { toast('QR ще не згенеровано', 'err'); return; }
   const a = document.createElement('a');
-  a.download = 'qr-' + (S.disks[S.currentDisk]?.name||'disk').replace(/\s+/g,'_') + '.png';
-  a.href = q('qr-canvas').toDataURL('image/png');
+  a.download = 'qr-' + (S.disks[S.currentDisk]?.name || 'disk').replace(/\s+/g, '_') + '.png';
+  a.href = src;
   a.click();
 }
 
