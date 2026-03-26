@@ -567,9 +567,10 @@ body::before {
 // STATE
 // ============================================================
 let S = {
-  token: '', gistId: '', isDemo: false,
+  token: '', indexGistId: '', isDemo: false,
   loggedIn: false, username: '',
-  disks: {},
+  index: {},   // { diskId: { id, name, capacity, used, free, updatedAt, gistId } }
+  disks: {},   // { diskId: fullDiskData } — кеш після завантаження
   currentDisk: null,
   authHash: '', authLogin: ''
 };
@@ -584,41 +585,32 @@ const DEMO_DISKS = {
     ],
     tree:[
       {name:'Projects_2023', size:1240, files:847, children:[
-        {name:'Client_Alpha',size:480,files:312,children:[{name:'RAW',size:280,files:44},{name:'Edits',size:120,files:68},{name:'Export',size:80,files:200}]},
-        {name:'Client_Beta',size:380,files:220,children:[{name:'Footage',size:200,files:30},{name:'Final',size:180,files:190}]},
-        {name:'Internal',size:380,files:315,children:[]}
+        {name:'Client_Alpha',size:480,files:312,children:[{name:'RAW',size:280,files:44,children:[]},{name:'Edits',size:120,files:68,children:[]}]},
+        {name:'Client_Beta',size:380,files:220,children:[]}
       ]},
       {name:'Projects_2024', size:980, files:612, children:[
-        {name:'Acme_Campaign',size:460,files:280,children:[{name:'RAW',size:310,files:40},{name:'Edit_v1',size:90,files:120},{name:'Edit_v2',size:60,files:120}]},
-        {name:'Misc',size:520,files:332,children:[]}
+        {name:'Acme_Campaign',size:460,files:280,children:[{name:'RAW',size:310,files:40,children:[]},{name:'Edit_v1',size:90,files:120,children:[]}]},
       ]},
-      {name:'RAW_Footage', size:1850, files:94, children:[
-        {name:'2023_Q4',size:920,files:48,children:[]},
-        {name:'2024_Q1',size:930,files:46,children:[]}
-      ]},
-      {name:'After_Effects_Cache', size:420, files:2341, children:[]},
-      {name:'Music_SFX', size:180, files:3892, children:[{name:'Licensed',size:120,files:2000},{name:'Free',size:60,files:1892}]},
-      {name:'Archives', size:150, files:23, children:[]}
+      {name:'RAW_Footage', size:1850, files:94, children:[]},
+      {name:'Music_SFX', size:180, files:3892, children:[]},
     ]
   },
   'd002': {
     id:'d002', name:'Samsung T7 2TB', capacity:2000, used:440, free:1560,
     updatedAt: new Date(Date.now()-18000000).toISOString(),
-    notes:[{author:'Іван', text:'Робочий диск для поточних монтажів. Очищати щомісяця.', date: new Date(Date.now()-7200000).toISOString()}],
+    notes:[{author:'Іван', text:'Робочий диск для поточних монтажів.', date: new Date(Date.now()-7200000).toISOString()}],
     tree:[
-      {name:'Client_Edits',size:280,files:156,children:[{name:'Ongoing',size:180,files:80},{name:'Review',size:100,files:76}]},
-      {name:'Exports',size:120,files:43,children:[{name:'H264',size:80,files:30},{name:'ProRes',size:40,files:13}]},
-      {name:'Temp',size:40,files:8,children:[]}
+      {name:'Client_Edits',size:280,files:156,children:[{name:'Ongoing',size:180,files:80,children:[]},{name:'Review',size:100,files:76,children:[]}]},
+      {name:'Exports',size:120,files:43,children:[]},
     ]
   },
   'd003': {
     id:'d003', name:'Seagate 8TB Backup', capacity:8000, used:7890, free:110,
     updatedAt: new Date(Date.now()-604800000).toISOString(),
-    notes:[{author:'Олег', text:'МАЙЖЕ ПОВНИЙ! Потрібно купити новий диск для бекапів.', date: new Date(Date.now()-86400000*3).toISOString()}],
+    notes:[{author:'Олег', text:'МАЙЖЕ ПОВНИЙ!', date: new Date(Date.now()-86400000*3).toISOString()}],
     tree:[
       {name:'Backup_2022',size:2400,files:12000,children:[]},
       {name:'Backup_2023',size:3100,files:15000,children:[]},
-      {name:'Backup_2024',size:2390,files:9800,children:[]}
     ]
   }
 };
@@ -629,32 +621,27 @@ const DEMO_DISKS = {
 function init() {
   const params = new URLSearchParams(location.search);
   const diskParam = params.get('disk');
-  const gistParam = params.get('g'); // gist id може бути в URL
+  const gistParam = params.get('g');
 
-  const raw = localStorage.getItem('diskmap2_cfg');
+  const raw = localStorage.getItem('diskmap3_cfg');
   if (raw) {
     const cfg = JSON.parse(raw);
-    S.token = cfg.token; S.gistId = cfg.gistId;
+    S.token = cfg.token; S.indexGistId = cfg.indexGistId;
     S.authHash = cfg.authHash; S.authLogin = cfg.authLogin;
-    S.isDemo = cfg.isDemo || false;
-
-    const sess = sessionStorage.getItem('diskmap2_sess');
+    const sess = sessionStorage.getItem('diskmap3_sess');
     if (sess) {
       S.loggedIn = true; S.username = sess;
-      if (S.isDemo) { S.disks = JSON.parse(JSON.stringify(DEMO_DISKS)); afterLogin(); }
-      else loadGist().then(afterLogin);
+      loadIndex().then(afterLogin);
     } else {
       nav('login');
     }
     return;
   }
 
-  // Немає локального конфіга — прийшли по QR з іншого пристрою
   if (diskParam || gistParam) {
-    // спробуємо завантажити конфіг з Gist якщо є g= в URL
     if (gistParam) {
-      S.gistId = gistParam;
-      fetchAuthFromGist(gistParam).then(() => nav('login'));
+      S.indexGistId = gistParam;
+      fetchAuthFromIndex(gistParam).then(() => nav('login'));
     } else {
       nav('login');
     }
@@ -663,56 +650,40 @@ function init() {
   }
 }
 
+async function fetchAuthFromIndex(indexGistId) {
+  try {
+    const r = await fetch('https://api.github.com/gists/' + indexGistId);
+    if (!r.ok) return;
+    const d = await r.json();
+    const f = d.files['index.json'];
+    if (!f) return;
+    const data = JSON.parse(f.content);
+    if (data._auth) S.authHash = data._auth.hash;
+  } catch(e) {}
+}
+
 async function repairGist() {
   const token = q('s-token').value.trim();
   const gistId = q('s-gist').value.trim();
-  if (!token || !gistId) { toast('Спочатку введи токен і Gist ID', 'err'); return; }
-
-  toast('Читаємо Gist...', '');
+  if (!token || !gistId) { toast('Введи токен і Gist ID', 'err'); return; }
+  toast('Перевіряємо...', '');
   try {
     const r = await fetch('https://api.github.com/gists/' + gistId, {
       headers: { Authorization: 'token ' + token }
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' — перевір токен і Gist ID');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
-    const f = d.files['diskmap.json'];
-
+    const f = d.files['index.json'];
     if (!f) {
-      toast('Файл diskmap.json не знайдено в Gist', 'err'); return;
-    }
-
-    let parsed = null;
-    try { parsed = JSON.parse(f.content); } catch(e) { parsed = null; }
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      // зіпсований JSON — скидаємо до порожнього
-      if (!confirm('Файл diskmap.json пошкоджений. Скинути до порожнього? Диски будуть втрачені.')) return;
-      const fix = await fetch('https://api.github.com/gists/' + gistId, {
-        method: 'PATCH',
-        headers: { Authorization: 'token ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: { 'diskmap.json': { content: '{}' } } })
-      });
-      if (!fix.ok) throw new Error('Не вдалось записати');
-      toast('Gist відновлено. Тепер налаштуй заново.', 'ok');
+      await patchGist(gistId, token, 'index.json', '{"_auth":{"hash":""}}');
+      toast('index.json створено. Збережи налаштування.', 'ok');
     } else {
-      const diskCount = Object.values(parsed).filter(v => v && v.id).length;
-      toast('Gist OK. Знайдено ' + diskCount + ' дисків.', 'ok');
+      let parsed = null;
+      try { parsed = JSON.parse(f.content); } catch(e) {}
+      const cnt = parsed ? Object.values(parsed).filter(v => v && v.id).length : 0;
+      toast('OK. ' + cnt + ' дисків в індексі.', 'ok');
     }
   } catch(e) { toast('Помилка: ' + e.message, 'err'); }
-}
-
-async function fetchAuthFromGist(gistId) {
-  try {
-    const r = await fetch('https://api.github.com/gists/' + gistId);
-    if (!r.ok) return;
-    const d = await r.json();
-    const f = d.files['diskmap.json'];
-    if (!f) return;
-    const data = JSON.parse(f.content);
-    if (data._auth) {
-      S.authHash = data._auth.hash;
-    }
-  } catch(e) {}
 }
 
 // ============================================================
@@ -727,25 +698,19 @@ async function runSetup() {
   if (pass.length < 4) { toast('Пароль мінімум 4 символи', 'err'); return; }
 
   const hash = await sha256(login + ':' + pass);
-  localStorage.setItem('diskmap2_cfg', JSON.stringify({ token, gistId, authHash: hash, authLogin: login }));
-  S.token = token; S.gistId = gistId; S.authHash = hash; S.authLogin = login;
+  localStorage.setItem('diskmap3_cfg', JSON.stringify({ token, indexGistId: gistId, authHash: hash, authLogin: login }));
+  S.token = token; S.indexGistId = gistId; S.authHash = hash; S.authLogin = login;
 
-  // завантажуємо існуючі дані — щоб не затерти диски
-  toast('Завантажуємо дані...', '');
-  await loadGist();
-
-  // оновлюємо тільки _auth, решта не чіпаємо
-  S.disks._auth = { hash };
+  toast('Завантажуємо індекс...', '');
+  await loadIndex();
+  S.index._auth = { hash };
 
   try {
-    S._allowEmptySave = true; // дозволяємо зберегти навіть якщо дисків 0
-    await saveGist();
-    S._allowEmptySave = false;
+    await saveIndex();
     toast('Налаштовано! Тепер увійди', 'ok');
     nav('login');
   } catch(e) {
-    S._allowEmptySave = false;
-    toast('Помилка збереження: ' + e.message, 'err');
+    toast('Помилка: ' + e.message, 'err');
   }
 }
 
@@ -758,7 +723,11 @@ async function doLogin() {
 
   if (login === 'demo' && pass === 'demo') {
     S.isDemo = true; S.loggedIn = true; S.username = 'demo';
-    sessionStorage.setItem('diskmap2_sess', 'demo');
+    sessionStorage.setItem('diskmap3_sess', 'demo');
+    S.index = {};
+    Object.values(DEMO_DISKS).forEach(d => {
+      S.index[d.id] = { id:d.id, name:d.name, capacity:d.capacity, used:d.used, free:d.free, updatedAt:d.updatedAt, gistId:'demo' };
+    });
     S.disks = JSON.parse(JSON.stringify(DEMO_DISKS));
     afterLogin(); return;
   }
@@ -767,7 +736,6 @@ async function doLogin() {
     q('login-error').textContent = 'Конфігурацію не знайдено. Зверніться до адміністратора.';
     q('login-error').classList.add('show'); return;
   }
-
   const hash = await sha256(login + ':' + pass);
   if (hash !== S.authHash) {
     q('login-error').textContent = 'Невірний логін або пароль';
@@ -775,85 +743,100 @@ async function doLogin() {
   }
   q('login-error').classList.remove('show');
   S.loggedIn = true; S.username = login;
-  sessionStorage.setItem('diskmap2_sess', login);
-  await loadGist();
+  sessionStorage.setItem('diskmap3_sess', login);
+  await loadIndex();
   afterLogin();
 }
 
 function doLogout() {
-  sessionStorage.removeItem('diskmap2_sess');
-  S.loggedIn=false; S.username='';
+  sessionStorage.removeItem('diskmap3_sess');
+  S.loggedIn = false; S.username = '';
   nav('login');
 }
 
 function afterLogin() {
   q('header-username').textContent = S.username;
   nav('app');
-  // check URL param
   const params = new URLSearchParams(location.search);
   const diskId = params.get('disk');
-  if (diskId && S.disks[diskId]) showDisk(diskId);
+  if (diskId && S.index[diskId]) showDisk(diskId);
   else showList();
 }
 
 // ============================================================
-// GIST
+// MULTI-GIST API
 // ============================================================
-async function loadGist() {
+async function loadIndex() {
   if (S.isDemo) return;
   const headers = S.token ? { Authorization: 'token ' + S.token } : {};
   try {
-    const r = await fetch('https://api.github.com/gists/' + S.gistId, { headers });
+    const r = await fetch('https://api.github.com/gists/' + S.indexGistId, { headers });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
-    const f = d.files['diskmap.json'];
+    const f = d.files['index.json'];
     if (!f || !f.content) return;
-    const content = f.content.trim();
-    if (!content || content === '') return;
-    try {
-      const parsed = JSON.parse(content);
-      // перевіряємо що це об'єкт, а не масив чи примітив
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        S.disks = parsed;
-      }
-    } catch(parseErr) {
-      toast('Помилка читання даних з Gist. Можливо файл пошкоджений.', 'err');
-      console.error('JSON parse error:', parseErr, 'Content:', content.slice(0, 200));
-    }
-  } catch(e) { toast('Помилка завантаження: ' + e.message, 'err'); }
+    const parsed = JSON.parse(f.content.trim());
+    if (parsed && typeof parsed === 'object') S.index = parsed;
+  } catch(e) { toast('Помилка індексу: ' + e.message, 'err'); }
 }
 
-async function saveGist() {
-  if (S.isDemo) { toast('Demo — дані не зберігаються',''); return; }
+async function saveIndex() {
+  if (S.isDemo) return;
+  const r = await patchGist(S.indexGistId, S.token, 'index.json', JSON.stringify(S.index, null, 2));
+  if (!r.ok) throw new Error('Index save HTTP ' + r.status);
+}
 
-  // ЗАХИСТ: не зберігаємо якщо дисків стало різко менше ніж в Gist
+async function loadDiskData(diskId) {
+  if (S.isDemo) return S.disks[diskId] || null;
+  if (S.disks[diskId]) return S.disks[diskId];
+  const entry = S.index[diskId];
+  if (!entry || !entry.gistId) return null;
   try {
-    const check = await fetch('https://api.github.com/gists/' + S.gistId, {
+    const r = await fetch('https://api.github.com/gists/' + entry.gistId, {
       headers: { Authorization: 'token ' + S.token }
     });
-    if (check.ok) {
-      const existing = await check.json();
-      const f = existing.files['diskmap.json'];
-      if (f && f.content) {
-        const old = JSON.parse(f.content);
-        const oldCount = Object.values(old).filter(v => v && v.id).length;
-        const newCount = getDisks().length;
-        if (oldCount > 0 && newCount === 0 && !S._allowEmptySave) {
-          throw new Error('Захист: спроба затерти ' + oldCount + ' дисків порожніми даними. Перезавантаж сторінку.');
-        }
-      }
-    }
-  } catch(e) {
-    if (e.message.includes('Захист')) throw e;
-    // мережева помилка при перевірці — дозволяємо зберігати
-  }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const f = d.files['disk.json'];
+    if (!f || !f.content) return null;
+    const parsed = JSON.parse(f.content.trim());
+    S.disks[diskId] = parsed;
+    return parsed;
+  } catch(e) { toast('Помилка завантаження диску: ' + e.message, 'err'); return null; }
+}
 
-  const r = await fetch('https://api.github.com/gists/' + S.gistId, {
-    method: 'PATCH',
+async function saveDiskData(diskId) {
+  if (S.isDemo) return;
+  const disk = S.disks[diskId];
+  if (!disk) return;
+  const entry = S.index[diskId];
+  if (!entry.gistId) {
+    const created = await createDiskGist(disk.name);
+    entry.gistId = created.id;
+    await saveIndex();
+  }
+  const json = JSON.stringify(disk, null, 2);
+  if (json.length > 8000000) { stripItems(disk.tree); }
+  const r = await patchGist(entry.gistId, S.token, 'disk.json', JSON.stringify(disk, null, 2));
+  if (!r.ok) throw new Error('Disk save HTTP ' + r.status);
+}
+
+async function createDiskGist(name) {
+  const r = await fetch('https://api.github.com/gists', {
+    method: 'POST',
     headers: { Authorization: 'token ' + S.token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: { 'diskmap.json': { content: JSON.stringify(S.disks, null, 2) } } })
+    body: JSON.stringify({ description: 'DiskMap: ' + name, public: false, files: { 'disk.json': { content: '{}' } } })
   });
-  if (!r.ok) throw new Error('Save HTTP ' + r.status);
+  if (!r.ok) throw new Error('Create gist HTTP ' + r.status);
+  return await r.json();
+}
+
+async function patchGist(gistId, token, filename, content) {
+  return fetch('https://api.github.com/gists/' + gistId, {
+    method: 'PATCH',
+    headers: { Authorization: 'token ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: { [filename]: { content } } })
+  });
 }
 
 // ============================================================
@@ -867,19 +850,23 @@ function nav(viewId) {
 function showList() {
   S.currentDisk = null;
   updateSidebar();
-  q('sidebar-disks') && document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
   q('nav-all').classList.add('active');
   renderList();
 }
 
-function showDisk(id) {
+async function showDisk(id) {
   S.currentDisk = id;
   updateSidebar();
   document.querySelectorAll('.sidebar-item[data-disk]').forEach(el=>el.classList.remove('active'));
-  const si = document.querySelector(`.sidebar-item[data-disk="${id}"]`);
+  const si = document.querySelector('.sidebar-item[data-disk="'+id+'"]');
   if (si) si.classList.add('active');
   q('nav-all').classList.remove('active');
-  renderDetail(id);
+  // показуємо скелетон поки завантажується
+  renderDetailSkeleton(id);
+  const disk = await loadDiskData(id);
+  if (disk) renderDetail(id);
+  else q('main-content').innerHTML += '<div style="padding:20px;color:var(--red)">Не вдалось завантажити дані диску</div>';
 }
 
 // ============================================================
@@ -891,11 +878,11 @@ function updateSidebar() {
   const el = q('sidebar-disks');
   el.innerHTML = disks.map(d => {
     const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
-    return `<div class="sidebar-item" data-disk="${d.id}" onclick="showDisk('${d.id}')">
-      <span class="item-icon">💾</span>
-      <span class="item-name">${esc(d.name)}</span>
-      <span class="item-pct">${pct}%</span>
-    </div>`;
+    return '<div class="sidebar-item" data-disk="'+d.id+'" onclick="showDisk(\''+d.id+'\')">' +
+      '<span class="item-icon">💾</span>' +
+      '<span class="item-name">'+esc(d.name)+'</span>' +
+      '<span class="item-pct">'+pct+'%</span>' +
+    '</div>';
   }).join('');
 }
 
@@ -905,84 +892,83 @@ function updateSidebar() {
 function renderList() {
   const disks = getDisks();
   const main = q('main-content');
-  let html = `<div class="page-title">Всі диски</div>
-    <div class="page-sub">${disks.length} дисків · ${S.isDemo ? 'demo режим' : 'синхронізовано з Gist'}</div>
-    <div class="disks-grid">`;
+  let html = '<div class="page-title">Всі диски</div>' +
+    '<div class="page-sub">'+disks.length+' дисків · '+(S.isDemo ? 'demo режим' : 'синхронізовано з Gist')+'</div>' +
+    '<div class="disks-grid">';
   disks.forEach(d => {
     const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
     const cls = pct>=90?'full':pct>=70?'warn':'ok';
-    html += `<div class="disk-card" onclick="showDisk('${d.id}')">
-      <div class="dc-top"><div class="dc-icon">💾</div><div class="dc-badge badge-${cls}">${cls.toUpperCase()}</div></div>
-      <div class="dc-name">${esc(d.name)}</div>
-      <div class="dc-id">id: ${d.id}</div>
-      <div class="dc-bar"><div class="dc-bar-fill fill-${cls}" style="width:${pct}%"></div></div>
-      <div class="dc-stats"><span>${fmtGB(d.used)} / ${fmtGB(d.capacity)}</span><span>${pct}%</span></div>
-      <div class="dc-updated">↻ ${fmtAgo(d.updatedAt)}</div>
-    </div>`;
+    html += '<div class="disk-card" onclick="showDisk(\''+d.id+'\')">' +
+      '<div class="dc-top"><div class="dc-icon">💾</div><div class="dc-badge badge-'+cls+'">'+cls.toUpperCase()+'</div></div>' +
+      '<div class="dc-name">'+esc(d.name)+'</div>' +
+      '<div class="dc-id">id: '+d.id+'</div>' +
+      '<div class="dc-bar"><div class="dc-bar-fill fill-'+cls+'" style="width:'+pct+'%"></div></div>' +
+      '<div class="dc-stats"><span>'+fmtGB(d.used)+' / '+fmtGB(d.capacity)+'</span><span>'+pct+'%</span></div>' +
+      '<div class="dc-updated">↻ '+fmtAgo(d.updatedAt)+'</div>' +
+    '</div>';
   });
-  html += `<div class="disk-card disk-card-add" onclick="openModal('modal-add')">
-    <div style="font-size:28px">+</div><div style="font-size:11px;letter-spacing:.5px">Додати диск</div>
-  </div></div>`;
+  html += '<div class="disk-card disk-card-add" onclick="openModal(\'modal-add\')">' +
+    '<div style="font-size:28px">+</div><div style="font-size:11px;letter-spacing:.5px">Додати диск</div>' +
+  '</div></div>';
   main.innerHTML = html;
 }
 
 // ============================================================
 // RENDER DETAIL
 // ============================================================
+function renderDetailSkeleton(id) {
+  const entry = S.index[id];
+  if (!entry) return;
+  q('main-content').innerHTML =
+    '<div style="font-size:11px;color:var(--text3);margin:24px 0 16px;cursor:pointer" onclick="showList()">← Всі диски</div>' +
+    '<div class="detail-disk-name">'+esc(entry.name)+'</div>' +
+    '<div style="padding:40px 0;text-align:center;color:var(--text3);font-size:12px">⟳ Завантаження даних диску...</div>';
+}
+
 function renderDetail(id) {
   const d = S.disks[id];
   if (!d) { showList(); return; }
+  const entry = S.index[id] || {};
   const pct = d.capacity ? Math.round(d.used/d.capacity*100) : 0;
-  const cls = pct>=90?'full':pct>=70?'warn':'ok';
   const fillCls = pct>=90?'fill-full':pct>=70?'fill-warn':'fill-ok';
   const valCls = pct>=90?'style="color:var(--red)"':pct>=70?'style="color:var(--yellow)"':'style="color:var(--green)"';
 
-  const main = q('main-content');
-  main.innerHTML = `
-    <div class="detail-header">
-      <div class="detail-title-wrap">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;cursor:pointer" onclick="showList()">← Всі диски</div>
-        <div class="detail-disk-name">${esc(d.name)}</div>
-        <div class="detail-disk-id">id: ${d.id} · оновлено ${fmtAgo(d.updatedAt)}</div>
-      </div>
-      <div class="detail-actions">
-        <button class="btn btn-primary btn-sm" onclick="openUpdateModal()">↑ Оновити</button>
-        <button class="btn btn-ghost btn-sm" onclick="showQR('${id}')">QR</button>
-        <button class="btn btn-danger btn-sm" onclick="confirmDelete('${id}')">Видалити</button>
-      </div>
-    </div>
-
-    <div class="stats-row">
-      <div class="stat-card"><div class="stat-label">Всього</div><div class="stat-value">${fmtGB(d.capacity)}</div></div>
-      <div class="stat-card"><div class="stat-label">Використано</div><div class="stat-value">${fmtGB(d.used)}</div></div>
-      <div class="stat-card"><div class="stat-label">Вільно</div><div class="stat-value" ${valCls}>${fmtGB(d.free)}</div></div>
-    </div>
-
-    <div class="usage-card">
-      <div class="usage-top"><span>Заповненість</span><span>${pct}%</span></div>
-      <div class="usage-bar"><div class="usage-bar-fill ${fillCls}" style="width:${pct}%"></div></div>
-    </div>
-
-    <div class="tree-card">
-      <div class="tree-header">
-        <div class="tree-title">Структура папок</div>
-        <div style="font-size:10px;color:var(--text3)">${(d.tree||[]).length} папок у корені</div>
-      </div>
-      <div class="tree-body" id="tree-body">${renderTree(d.tree||[], d.used||1, 0)}</div>
-    </div>
-
-    <div class="notes-card">
-      <div class="notes-header">
-        <div class="notes-title">Нотатки команди</div>
-        <div style="font-size:10px;color:var(--text3)">${(d.notes||[]).length} записів</div>
-      </div>
-      <div class="notes-list" id="notes-list">${renderNotes(d.notes||[])}</div>
-      <div class="notes-add">
-        <textarea id="note-input" placeholder="Додати нотатку для колег..."></textarea>
-        <button class="btn btn-primary btn-sm" onclick="addNote('${id}')">Додати</button>
-      </div>
-    </div>
-  `;
+  q('main-content').innerHTML =
+    '<div class="detail-header">' +
+      '<div class="detail-title-wrap">' +
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;cursor:pointer" onclick="showList()">← Всі диски</div>' +
+        '<div class="detail-disk-name">'+esc(d.name)+'</div>' +
+        '<div class="detail-disk-id">id: '+d.id+' · оновлено '+fmtAgo(d.updatedAt)+'</div>' +
+      '</div>' +
+      '<div class="detail-actions">' +
+        '<button class="btn btn-primary btn-sm" onclick="openUpdateModal()">↑ Оновити</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="showQR(\''+id+'\')">QR</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\''+id+'\')">Видалити</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="stats-row">' +
+      '<div class="stat-card"><div class="stat-label">Всього</div><div class="stat-value">'+fmtGB(d.capacity)+'</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Використано</div><div class="stat-value">'+fmtGB(d.used)+'</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Вільно</div><div class="stat-value" '+valCls+'>'+fmtGB(d.free)+'</div></div>' +
+    '</div>' +
+    '<div class="usage-card">' +
+      '<div class="usage-top"><span>Заповненість</span><span>'+pct+'%</span></div>' +
+      '<div class="usage-bar"><div class="usage-bar-fill '+fillCls+'" style="width:'+pct+'%"></div></div>' +
+    '</div>' +
+    '<div class="tree-card">' +
+      '<div class="tree-header"><div class="tree-title">Структура папок</div>' +
+      '<div style="font-size:10px;color:var(--text3)">'+(d.tree||[]).length+' папок у корені</div></div>' +
+      '<div class="tree-body" id="tree-body">'+renderTree(d.tree||[], d.used||1, 0)+'</div>' +
+    '</div>' +
+    '<div class="notes-card">' +
+      '<div class="notes-header"><div class="notes-title">Нотатки команди</div>' +
+      '<div style="font-size:10px;color:var(--text3)">'+(d.notes||[]).length+' записів</div></div>' +
+      '<div class="notes-list" id="notes-list">'+renderNotes(d.notes||[])+'</div>' +
+      '<div class="notes-add">' +
+        '<textarea id="note-input" placeholder="Додати нотатку для колег..."></textarea>' +
+        '<button class="btn btn-primary btn-sm" onclick="addNote(\''+id+'\')">Додати</button>' +
+      '</div>' +
+    '</div>';
 }
 
 // ============================================================
@@ -995,25 +981,19 @@ function renderTree(nodes, totalSize, depth) {
     const hasChildren = (node.children && node.children.length > 0) || (node.items && node.items.length > 0);
     const uid = 'tree_' + Math.random().toString(36).slice(2);
     const indentPx = depth * 18 + 16;
-
-    const filesHtml = node.items && node.items.length
-      ? node.items.map(f => renderFileRow(f, depth + 1)).join('')
-      : '';
-    const childrenHtml = node.children && node.children.length
-      ? renderTree(node.children, totalSize, depth + 1)
-      : '';
-
+    const filesHtml = node.items && node.items.length ? node.items.map(f => renderFileRow(f, depth+1)).join('') : '';
+    const childrenHtml = node.children && node.children.length ? renderTree(node.children, totalSize, depth+1) : '';
     return '<div class="tree-node">' +
-      '<div class="tree-row" onclick="toggleTree(\'' + uid + '\',this)">' +
-        '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
-        '<div class="tree-toggle">' + (hasChildren ? '▶' : '&nbsp;') + '</div>' +
+      '<div class="tree-row" onclick="toggleTree(\''+uid+'\',this)">' +
+        '<div class="tree-indent" style="width:'+indentPx+'px"></div>' +
+        '<div class="tree-toggle">'+(hasChildren?'▶':'&nbsp;')+'</div>' +
         '<div class="tree-ico">📁</div>' +
-        '<div class="tree-name">' + esc(node.name) + '</div>' +
-        '<div class="tree-count">' + (node.files ? node.files.toLocaleString() + ' ф.' : '') + '</div>' +
-        '<div class="tree-bar-mini"><div class="tree-bar-fill" style="width:' + Math.min(pct * 3, 100) + '%"></div></div>' +
-        '<div class="tree-size">' + fmtGB(node.size) + '</div>' +
+        '<div class="tree-name">'+esc(node.name)+'</div>' +
+        '<div class="tree-count">'+(node.files?node.files.toLocaleString()+' ф.':'')+'</div>' +
+        '<div class="tree-bar-mini"><div class="tree-bar-fill" style="width:'+Math.min(pct*3,100)+'%"></div></div>' +
+        '<div class="tree-size">'+fmtGB(node.size)+'</div>' +
       '</div>' +
-      (hasChildren ? '<div class="tree-children" id="' + uid + '">' + childrenHtml + filesHtml + '</div>' : '') +
+      (hasChildren?'<div class="tree-children" id="'+uid+'">'+childrenHtml+filesHtml+'</div>':'') +
     '</div>';
   }).join('');
 }
@@ -1021,48 +1001,16 @@ function renderTree(nodes, totalSize, depth) {
 function renderFileRow(file, depth) {
   const indentPx = depth * 18 + 16;
   const cat = getExtCat(file.ext);
-  const extBadge = file.ext
-    ? '<span class="file-ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + file.ext + '</span>'
-    : '';
-  const sizeTxt = file.size >= 1024
-    ? (file.size / 1024).toFixed(1) + ' GB'
-    : file.size > 0 ? file.size.toFixed(0) + ' MB' : '';
+  const extBadge = file.ext ? '<span class="file-ext-badge" style="color:'+cat.color+';background:'+cat.bg+'">'+file.ext+'</span>' : '';
+  const sizeTxt = file.size >= 1024 ? (file.size/1024).toFixed(1)+' GB' : file.size > 0 ? file.size.toFixed(0)+' MB' : '';
   return '<div class="tree-row file-row">' +
-    '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
+    '<div class="tree-indent" style="width:'+indentPx+'px"></div>' +
     '<div class="tree-toggle">&nbsp;</div>' +
     '<div class="tree-ico" style="opacity:0.4">📄</div>' +
-    '<div class="tree-name" style="color:var(--text2)">' + esc(file.name) + '</div>' +
+    '<div class="tree-name" style="color:var(--text2)">'+esc(file.name)+'</div>' +
     extBadge +
-    '<div class="tree-size" style="color:var(--text3)">' + sizeTxt + '</div>' +
+    '<div class="tree-size" style="color:var(--text3)">'+sizeTxt+'</div>' +
   '</div>';
-}
-
-function renderExtBadgesMobile(exts, depth) { return ''; } // вимкнено
-
-// Ext badge colors by category
-const EXT_CATS = {
-  video: { exts: ['mp4','mov','avi','mkv','mxf','r3d','braw','prproj','aep','ppj','wmv','webm','m4v'], color: '#ff6b35', bg: 'rgba(255,107,53,0.12)' },
-  audio: { exts: ['wav','mp3','aiff','aif','flac','ogg','m4a','aac','mid','midi'], color: '#00d4ff', bg: 'rgba(0,212,255,0.12)' },
-  image: { exts: ['jpg','jpeg','png','tiff','tif','psd','ai','svg','raw','arw','cr2','nef','webp','heic'], color: '#00ff88', bg: 'rgba(0,255,136,0.12)' },
-  doc:   { exts: ['pdf','doc','docx','xls','xlsx','txt','csv','xml','json'], color: '#ffcc00', bg: 'rgba(255,204,0,0.12)' },
-  arch:  { exts: ['zip','rar','7z','tar','gz'], color: '#aa88ff', bg: 'rgba(170,136,255,0.12)' },
-};
-
-function getExtCat(ext) {
-  for (const [cat, info] of Object.entries(EXT_CATS)) {
-    if (info.exts.includes(ext)) return info;
-  }
-  return { color: '#7a8fa0', bg: 'rgba(122,143,160,0.1)' };
-}
-
-function renderExtBadges(exts) {
-  if (!exts || !Object.keys(exts).length) return '';
-  // top 4 by count
-  const sorted = Object.entries(exts).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  return sorted.map(([ext, cnt]) => {
-    const cat = getExtCat(ext);
-    return '<span class="ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + ext + ' <span class="ext-cnt">' + cnt + '</span></span>';
-  }).join('');
 }
 
 function toggleTree(uid, row) {
@@ -1078,15 +1026,12 @@ function toggleTree(uid, row) {
 // ============================================================
 function renderNotes(notes) {
   if (!notes.length) return '<div class="note-empty">Поки немає нотаток</div>';
-  return [...notes].reverse().map(n => `
-    <div class="note-item">
-      <div class="note-meta">
-        <span class="note-author">${esc(n.author)}</span>
-        <span class="note-date">${fmtAgo(n.date)}</span>
-      </div>
-      <div class="note-text">${esc(n.text)}</div>
-    </div>
-  `).join('');
+  return [...notes].reverse().map(n =>
+    '<div class="note-item">' +
+      '<div class="note-meta"><span class="note-author">'+esc(n.author)+'</span><span class="note-date">'+fmtAgo(n.date)+'</span></div>' +
+      '<div class="note-text">'+esc(n.text)+'</div>' +
+    '</div>'
+  ).join('');
 }
 
 async function addNote(diskId) {
@@ -1096,12 +1041,14 @@ async function addNote(diskId) {
   const disk = S.disks[diskId];
   if (!disk.notes) disk.notes = [];
   disk.notes.push({ author: S.username, text, date: new Date().toISOString() });
+  // оновлюємо індекс
+  if (S.index[diskId]) S.index[diskId].updatedAt = disk.updatedAt = new Date().toISOString();
   input.value = '';
   try {
-    await saveGist();
+    await saveDiskData(diskId);
     q('notes-list').innerHTML = renderNotes(disk.notes);
-    toast('Нотатку додано','ok');
-  } catch(e) { toast('Помилка збереження','err'); }
+    toast('Нотатку додано', 'ok');
+  } catch(e) { toast('Помилка збереження', 'err'); }
 }
 
 // ============================================================
@@ -1112,18 +1059,24 @@ function onSearch(val) {
   if (!val || val.length < 2) { dd.classList.remove('open'); return; }
   const results = [];
   const q2 = val.toLowerCase();
-  getDisks().forEach(disk => {
-    searchTree(disk.tree||[], q2, disk, [], results);
+  // шукаємо по індексу (назви дисків) + по завантажених даних
+  getDisks().forEach(entry => {
+    if (entry.name.toLowerCase().includes(q2)) {
+      results.push({ diskId:entry.id, diskName:entry.name, path:entry.name, size:entry.used, files:null, isDisk:true });
+    }
+    const disk = S.disks[entry.id];
+    if (disk) searchTree(disk.tree||[], q2, entry, [], results);
   });
   if (!results.length) {
-    dd.innerHTML = `<div class="search-empty">Нічого не знайдено</div>`;
+    dd.innerHTML = '<div class="search-empty">Нічого не знайдено</div>';
   } else {
-    dd.innerHTML = results.slice(0,12).map(r => `
-      <div class="search-result-item" onclick="showDisk('${r.diskId}')">
-        <div class="sri-disk">💾 ${esc(r.diskName)}</div>
-        <div class="sri-path">${highlightMatch(r.path, val)}</div>
-        <div class="sri-size">${fmtGB(r.size)} · ${r.files ? r.files.toLocaleString()+' файлів' : ''}</div>
-      </div>`).join('');
+    dd.innerHTML = results.slice(0,12).map(r =>
+      '<div class="search-result-item" onclick="showDisk(\''+r.diskId+'\')">' +
+        '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
+        '<div class="sri-path">'+highlightMatch(r.path, val)+'</div>' +
+        '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' файлів':'')+'</div>' +
+      '</div>'
+    ).join('');
   }
   dd.classList.add('open');
 }
@@ -1140,7 +1093,7 @@ function searchTree(nodes, query, disk, pathArr, results) {
 }
 
 function highlightMatch(text, query) {
-  const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+  const re = new RegExp('('+query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')', 'gi');
   return esc(text).replace(re, '<mark>$1</mark>');
 }
 
@@ -1152,23 +1105,35 @@ function closeSearch() { q('search-dropdown').classList.remove('open'); }
 async function createDisk() {
   const name = q('nd-name').value.trim();
   const cap = parseInt(q('nd-cap').value)||0;
-  if (!name) { toast('Введи назву','err'); return; }
+  if (!name) { toast('Введи назву', 'err'); return; }
   const id = 'disk-' + Date.now().toString(36);
+  // Запис в індекс (gistId буде присвоєний при першому saveDiskData)
+  S.index[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), gistId:'' };
   S.disks[id] = { id, name, capacity:cap, used:0, free:cap, updatedAt:new Date().toISOString(), tree:[], notes:[] };
   try {
-    await saveGist();
+    // Створюємо окремий Gist для диску
+    if (!S.isDemo) {
+      const created = await createDiskGist(name);
+      S.index[id].gistId = created.id;
+      await saveDiskData(id);
+      await saveIndex();
+    }
     closeModal('modal-add');
     q('nd-name').value=''; q('nd-cap').value='';
-    toast('Диск додано','ok');
+    toast('Диск додано', 'ok');
     showDisk(id);
-  } catch(e) { toast('Помилка','err'); }
+  } catch(e) { toast('Помилка: '+e.message, 'err'); }
 }
 
 async function confirmDelete(id) {
   if (!confirm('Видалити запис про цей диск?')) return;
+  delete S.index[id];
   delete S.disks[id];
-  try { await saveGist(); toast('Видалено','ok'); showList(); }
-  catch(e) { toast('Помилка','err'); }
+  try {
+    await saveIndex();
+    toast('Видалено', 'ok');
+    showList();
+  } catch(e) { toast('Помилка', 'err'); }
 }
 
 // ============================================================
@@ -1177,16 +1142,12 @@ async function confirmDelete(id) {
 function openUpdateModal() { openModal('modal-update'); }
 
 async function pickFolder() {
-  if (!window.showDirectoryPicker) {
-    toast('Потрібен Chrome або Edge','err'); return;
-  }
+  if (!window.showDirectoryPicker) { toast('Потрібен Chrome або Edge', 'err'); return; }
   let dir;
-  try { dir = await window.showDirectoryPicker(); }
-  catch(e) { return; }
+  try { dir = await window.showDirectoryPicker(); } catch(e) { return; }
 
   const log = q('scan-log');
   log.classList.add('show'); log.innerHTML = '';
-
   function logLine(msg) { log.innerHTML += msg + '\n'; log.scrollTop = log.scrollHeight; }
 
   try {
@@ -1198,23 +1159,37 @@ async function pickFolder() {
     d.used = usedGB;
     d.free = Math.max((d.capacity||0) - usedGB, 0);
     d.updatedAt = new Date().toISOString();
+    // оновлюємо індекс
+    if (S.index[S.currentDisk]) {
+      S.index[S.currentDisk].used = d.used;
+      S.index[S.currentDisk].free = d.free;
+      S.index[S.currentDisk].updatedAt = d.updatedAt;
+    }
+    const sizeKB = Math.round(JSON.stringify(d).length / 1024);
+    logLine('Розмір даних: ' + sizeKB + ' KB');
     logLine('↑ Збереження...');
-    await saveGist();
+    await saveDiskData(S.currentDisk);
+    await saveIndex();
     log.classList.remove('show');
     closeModal('modal-update');
-    toast('Оновлено і збережено!','ok');
+    toast('Оновлено і збережено!', 'ok');
     renderDetail(S.currentDisk);
     updateSidebar();
   } catch(e) {
     log.classList.remove('show');
-    toast('Помилка: '+e.message,'err');
+    toast('Помилка: '+e.message, 'err');
   }
+}
+
+function stripItems(tree) {
+  if (!tree) return;
+  tree.forEach(node => { delete node.items; delete node.exts; if (node.children) stripItems(node.children); });
 }
 
 async function scanDir(handle, depth, logFn) {
   let totalBytes = 0;
   const tree = [];
-  const filesList = []; // прямі файли в цій папці
+  const filesList = [];
   let directFiles = 0;
   const exts = {};
 
@@ -1223,18 +1198,15 @@ async function scanDir(handle, depth, logFn) {
     if (h.kind === 'directory') {
       if (logFn && depth < 3) logFn('⟳ ' + name);
       try {
-        const sub = await scanDir(h, depth + 1, depth < 1 ? logFn : null);
+        const sub = await scanDir(h, depth+1, depth < 1 ? logFn : null);
         totalBytes += sub.totalBytes;
-        for (const [ext, cnt] of Object.entries(sub.exts)) {
-          exts[ext] = (exts[ext] || 0) + cnt;
-        }
+        for (const [ext, cnt] of Object.entries(sub.exts)) exts[ext] = (exts[ext]||0) + cnt;
         tree.push({
           name,
-          size: Math.round(sub.totalBytes / 1024 / 1024 / 1024 * 1000) / 1000,
+          size: Math.round(sub.totalBytes/1024/1024/1024*1000)/1000,
           files: sub.fileCount,
-          exts: sub.exts,
-          items: sub.filesList, // файли прямо в цій папці
-          children: depth < 4 ? sub.tree : []
+          items: depth < 2 ? sub.filesList.slice(0, 40) : undefined,
+          children: depth < 3 ? sub.tree : []
         });
       } catch(e) {}
     } else {
@@ -1243,27 +1215,18 @@ async function scanDir(handle, depth, logFn) {
         totalBytes += f.size;
         directFiles++;
         const dot = name.lastIndexOf('.');
-        const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
-        if (ext) exts[ext] = (exts[ext] || 0) + 1;
-        // зберігаємо файл тільки якщо глибина не надто велика (економія розміру)
-        if (depth <= 5) {
-          filesList.push({
-            name,
-            ext,
-            size: Math.round(f.size / 1024 / 1024 * 10) / 10 // MB
-          });
+        const ext = dot > 0 ? name.slice(dot+1).toLowerCase() : '';
+        if (ext) exts[ext] = (exts[ext]||0) + 1;
+        if (depth <= 2 && filesList.length < 40) {
+          filesList.push({ name, ext, size: Math.round(f.size/1024/1024*10)/10 });
         }
       } catch(e) {}
     }
   }
 
-  // сортуємо файли: спочатку по розширенню, потім по назві
-  filesList.sort((a, b) => {
-    if (a.ext !== b.ext) return a.ext.localeCompare(b.ext);
-    return a.name.localeCompare(b.name);
-  });
-  tree.sort((a, b) => b.size - a.size);
-  const fileCount = directFiles + tree.reduce((s, n) => s + (n.files || 0), 0);
+  filesList.sort((a,b) => a.ext.localeCompare(b.ext) || a.name.localeCompare(b.name));
+  tree.sort((a,b) => b.size - a.size);
+  const fileCount = directFiles + tree.reduce((s,n) => s+(n.files||0), 0);
   return { tree, totalBytes, fileCount, exts, filesList };
 }
 
@@ -1271,29 +1234,22 @@ async function scanDir(handle, depth, logFn) {
 // QR
 // ============================================================
 function showQR(id) {
-  const d = S.disks[id];
+  const entry = S.index[id] || {};
   const base = location.origin + location.pathname;
-  const url = base + '?g=' + S.gistId + '&disk=' + id;
-  q('qr-name').textContent = d.name;
+  const url = base + '?g=' + S.indexGistId + '&disk=' + id;
+  q('qr-name').textContent = entry.name || id;
   q('qr-url').textContent = url;
   openModal('modal-qr');
-
   try {
     const qr = qrcode(0, 'M');
     qr.addData(url);
     qr.make();
-    // render as table-based SVG via built-in method
-    const size = 220;
-    const count = qr.getModuleCount();
-    const cell = Math.floor(size / count);
-    const margin = 10;
-    let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + (size + margin*2) + '" height="' + (size + margin*2) + '">';
+    const size = 220, count = qr.getModuleCount(), cell = Math.floor(size/count), margin = 10;
+    let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+(size+margin*2)+'" height="'+(size+margin*2)+'">';
     svg += '<rect width="100%" height="100%" fill="white"/>';
-    for (let row = 0; row < count; row++) {
-      for (let col = 0; col < count; col++) {
-        if (qr.isDark(row, col)) {
-          svg += '<rect x="' + (col * cell + margin) + '" y="' + (row * cell + margin) + '" width="' + cell + '" height="' + cell + '" fill="black"/>';
-        }
+    for (let row=0; row<count; row++) {
+      for (let col=0; col<count; col++) {
+        if (qr.isDark(row,col)) svg += '<rect x="'+(col*cell+margin)+'" y="'+(row*cell+margin)+'" width="'+cell+'" height="'+cell+'" fill="black"/>';
       }
     }
     svg += '</svg>';
@@ -1301,35 +1257,26 @@ function showQR(id) {
     const img = q('qr-img');
     img.src = dataUrl;
     img._svgData = svg;
-  } catch(e) {
-    toast('QR помилка: ' + e.message, 'err');
-  }
+  } catch(e) { toast('QR помилка: '+e.message, 'err'); }
 }
 
 function downloadQR() {
   const img = q('qr-img');
-  const d = S.disks[S.currentDisk];
-  const fname = 'qr-' + (d?.name || 'disk').replace(/\s+/g, '_') + '.png';
-
-  // convert SVG to PNG via canvas
   const svg = img._svgData;
   if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
-  const blob = new Blob([svg], {type: 'image/svg+xml'});
+  const entry = S.index[S.currentDisk] || {};
+  const fname = 'qr-'+(entry.name||'disk').replace(/\s+/g,'_')+'.png';
+  const blob = new Blob([svg], {type:'image/svg+xml'});
   const blobUrl = URL.createObjectURL(blob);
   const image = new Image();
   image.onload = function() {
     const canvas = document.createElement('canvas');
-    canvas.width = image.width * 2;
-    canvas.height = image.height * 2;
+    canvas.width = image.width*2; canvas.height = image.height*2;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle='white'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(image,0,0,canvas.width,canvas.height);
     URL.revokeObjectURL(blobUrl);
-    const a = document.createElement('a');
-    a.download = fname;
-    a.href = canvas.toDataURL('image/png');
-    a.click();
+    const a = document.createElement('a'); a.download=fname; a.href=canvas.toDataURL('image/png'); a.click();
   };
   image.src = blobUrl;
 }
@@ -1338,7 +1285,7 @@ function downloadQR() {
 // UTILS
 // ============================================================
 function q(id) { return document.getElementById(id); }
-function getDisks() { return Object.values(S.disks).filter(d => d && d.id); }
+function getDisks() { return Object.values(S.index).filter(d => d && d.id); }
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function fmtGB(gb) {
@@ -1362,6 +1309,25 @@ async function sha256(str) {
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+const EXT_CATS = {
+  video: { exts:['mp4','mov','avi','mkv','mxf','r3d','braw','prproj','aep','wmv','webm','m4v'], color:'#ff6b35', bg:'rgba(255,107,53,0.12)' },
+  audio: { exts:['wav','mp3','aiff','aif','flac','ogg','m4a','aac','mid'], color:'#00d4ff', bg:'rgba(0,212,255,0.12)' },
+  image: { exts:['jpg','jpeg','png','tiff','tif','psd','ai','svg','raw','arw','cr2','nef','webp','heic'], color:'#00ff88', bg:'rgba(0,255,136,0.12)' },
+  doc:   { exts:['pdf','doc','docx','xls','xlsx','txt','csv','xml','json'], color:'#ffcc00', bg:'rgba(255,204,0,0.12)' },
+  arch:  { exts:['zip','rar','7z','tar','gz'], color:'#aa88ff', bg:'rgba(170,136,255,0.12)' },
+};
+function getExtCat(ext) {
+  for (const [,info] of Object.entries(EXT_CATS)) { if (info.exts.includes(ext)) return info; }
+  return { color:'#7a8fa0', bg:'rgba(122,143,160,0.1)' };
+}
+function renderExtBadges(exts) {
+  if (!exts || !Object.keys(exts).length) return '';
+  return Object.entries(exts).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([ext,cnt]) => {
+    const cat = getExtCat(ext);
+    return '<span class="ext-badge" style="color:'+cat.color+';background:'+cat.bg+'">'+ext+' <span class="ext-cnt">'+cnt+'</span></span>';
+  }).join('');
+}
+
 function openModal(id) { q(id).classList.add('open'); }
 function closeModal(id) { q(id).classList.remove('open'); }
 
@@ -1372,8 +1338,8 @@ document.querySelectorAll('.overlay').forEach(o => {
 let _tt;
 function toast(msg, type) {
   const t = q('toast');
-  t.textContent = msg; t.className = 'toast show ' + (type||'');
-  clearTimeout(_tt); _tt = setTimeout(()=>t.classList.remove('show'), 3000);
+  t.textContent = msg; t.className = 'toast show '+(type||'');
+  clearTimeout(_tt); _tt = setTimeout(()=>t.classList.remove('show'), 3500);
 }
 
 // ============================================================
