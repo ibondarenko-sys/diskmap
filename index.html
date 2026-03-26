@@ -389,11 +389,47 @@ body::before {
   .detail-disk-name { font-size: 20px; }
   .header-search-wrap { display: none; }
   .disks-grid { grid-template-columns: 1fr; }
+  .mobile-search-btn { display: flex !important; }
 }
 @media (max-width: 480px) {
   .stats-row { grid-template-columns: 1fr; }
   .stats-row .stat-card:last-child { grid-column: auto; }
 }
+
+/* Mobile search overlay */
+.mobile-search-btn {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r); cursor: pointer; font-size: 16px;
+  color: var(--text2); flex-shrink: 0;
+}
+.mobile-search-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.mobile-search-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(8,12,16,0.97);
+  padding: 16px;
+  flex-direction: column;
+}
+.mobile-search-overlay.open { display: flex; }
+.mobile-search-top {
+  display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+}
+.mobile-search-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--border2);
+  color: var(--text); padding: 11px 14px; font-family: var(--mono);
+  font-size: 14px; border-radius: var(--r); outline: none;
+}
+.mobile-search-input:focus { border-color: var(--accent); }
+.mobile-search-close {
+  background: none; border: none; color: var(--text3);
+  font-size: 14px; font-family: var(--mono); cursor: pointer; padding: 8px;
+}
+.mobile-search-results { flex: 1; overflow-y: auto; }
+.mobile-search-empty { text-align: center; color: var(--text3); font-size: 12px; padding: 40px 0; }
 
 .tree-exts { display: none; } /* вимкнено на папках */
 .ext-badge { font-size: 9px; padding: 2px 5px; border-radius: 3px; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
@@ -509,6 +545,7 @@ body::before {
       <div class="search-dropdown" id="search-dropdown"></div>
     </div>
     <div class="header-sep"></div>
+    <button class="mobile-search-btn" onclick="openMobileSearch()" title="Пошук">⌕</button>
     <div class="header-user"><div class="dot"></div><span id="header-username"></span></div>
     <button class="header-btn" onclick="doLogout()">Вийти</button>
   </header>
@@ -534,6 +571,20 @@ body::before {
     <main class="main-content" id="main-content">
       <!-- content injected here -->
     </main>
+  </div>
+
+  <!-- Mobile search overlay -->
+  <div class="mobile-search-overlay" id="mobile-search-overlay">
+    <div class="mobile-search-top">
+      <input class="mobile-search-input" id="mobile-search-input"
+        placeholder="Пошук дисків і папок..."
+        oninput="onMobileSearch(this.value)"
+        autocomplete="off">
+      <button class="mobile-search-close" onclick="closeMobileSearch()">Закрити</button>
+    </div>
+    <div class="mobile-search-results" id="mobile-search-results">
+      <div class="mobile-search-empty">Введи назву диску або папки</div>
+    </div>
   </div>
 </div>
 
@@ -658,7 +709,7 @@ function init() {
   const sess = sessionStorage.getItem('diskmap3_sess');
 
   if (sess) {
-    S.loggedIn = true; S.username = 'user';
+    S.loggedIn = true; S.username = 'Postmen';
     loadIndex().then(() => {
       if (diskParam && S.index[diskParam]) showDisk(diskParam);
       else afterLogin();
@@ -794,8 +845,8 @@ async function doLogin() {
   }
 
   q('pin-error').classList.remove('show');
-  S.loggedIn = true; S.username = 'user';
-  sessionStorage.setItem('diskmap3_sess', 'user');
+  S.loggedIn = true; S.username = 'Postmen';
+  sessionStorage.setItem('diskmap3_sess', 'Postmen');
   await loadIndex();
   afterLogin();
 }
@@ -820,6 +871,16 @@ function doLogout() {
 function afterLogin() {
   q('header-username').textContent = S.username;
   nav('app');
+
+  // підвантажуємо всі диски у фоні щоб пошук одразу працював
+  setTimeout(() => {
+    getDisks().forEach(entry => {
+      if (!S.disks[entry.id] && entry.gistId) {
+        loadDiskData(entry.id).catch(() => {});
+      }
+    });
+  }, 500);
+
   const pendingDisk = sessionStorage.getItem('diskmap3_pending_disk');
   if (pendingDisk) {
     sessionStorage.removeItem('diskmap3_pending_disk');
@@ -1046,7 +1107,10 @@ function renderDetail(id) {
       '<div style="font-size:10px;color:var(--text3)">'+(d.notes||[]).length+' записів</div></div>' +
       '<div class="notes-list" id="notes-list">'+renderNotes(d.notes||[])+'</div>' +
       '<div class="notes-add">' +
-        '<textarea id="note-input" placeholder="Додати нотатку для колег..."></textarea>' +
+        '<div style="flex:1">' +
+          '<input id="note-author" type="text" placeholder="Ім\'я (необов\'язково)" style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:7px 12px;font-family:var(--mono);font-size:11px;border-radius:var(--r);outline:none;margin-bottom:6px;" onfocus="this.style.borderColor=\'var(--accent)\'" onblur="this.style.borderColor=\'var(--border)\'">' +
+          '<textarea id="note-input" placeholder="Додати нотатку для колег..."></textarea>' +
+        '</div>' +
         '<button class="btn btn-primary btn-sm" onclick="addNote(\''+id+'\')">Додати</button>' +
       '</div>' +
     '</div>';
@@ -1117,14 +1181,16 @@ function renderNotes(notes) {
 
 async function addNote(diskId) {
   const input = q('note-input');
+  const authorInput = q('note-author');
   const text = input.value.trim();
   if (!text) return;
+  const author = (authorInput?.value.trim()) || S.username;
   const disk = S.disks[diskId];
   if (!disk.notes) disk.notes = [];
-  disk.notes.push({ author: S.username, text, date: new Date().toISOString() });
-  // оновлюємо індекс
+  disk.notes.push({ author, text, date: new Date().toISOString() });
   if (S.index[diskId]) S.index[diskId].updatedAt = disk.updatedAt = new Date().toISOString();
   input.value = '';
+  if (authorInput) authorInput.value = '';
   try {
     await saveDiskData(diskId);
     q('notes-list').innerHTML = renderNotes(disk.notes);
@@ -1179,6 +1245,45 @@ function highlightMatch(text, query) {
 }
 
 function closeSearch() { q('search-dropdown').classList.remove('open'); }
+
+function openMobileSearch() {
+  q('mobile-search-overlay').classList.add('open');
+  setTimeout(() => q('mobile-search-input')?.focus(), 100);
+}
+
+function closeMobileSearch() {
+  q('mobile-search-overlay').classList.remove('open');
+  q('mobile-search-input').value = '';
+  q('mobile-search-results').innerHTML = '<div class="mobile-search-empty">Введи назву диску або папки</div>';
+}
+
+function onMobileSearch(val) {
+  const container = q('mobile-search-results');
+  if (!val || val.length < 2) {
+    container.innerHTML = '<div class="mobile-search-empty">Введи назву диску або папки</div>';
+    return;
+  }
+  const results = [];
+  const q2 = val.toLowerCase();
+  getDisks().forEach(entry => {
+    if (entry.name.toLowerCase().includes(q2)) {
+      results.push({ diskId:entry.id, diskName:entry.name, path:entry.name, size:entry.used, files:null });
+    }
+    const disk = S.disks[entry.id];
+    if (disk) searchTree(disk.tree||[], q2, entry, [], results);
+  });
+  if (!results.length) {
+    container.innerHTML = '<div class="mobile-search-empty">Нічого не знайдено</div>';
+    return;
+  }
+  container.innerHTML = results.slice(0, 20).map(r =>
+    '<div class="search-result-item" onclick="closeMobileSearch();showDisk(\''+r.diskId+'\')" style="padding:14px 16px">' +
+      '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
+      '<div class="sri-path">'+highlightMatch(r.path, val)+'</div>' +
+      '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' ф.':'')+'</div>' +
+    '</div>'
+  ).join('');
+}
 
 // ============================================================
 // DISK CRUD
@@ -1282,7 +1387,7 @@ async function scanDir(handle, depth, logFn) {
   for await (const [name, h] of handle.entries()) {
     if (name.startsWith('.') || name === 'System Volume Information' || name === '$RECYCLE.BIN') continue;
     if (h.kind === 'directory') {
-      if (logFn && depth < 3) logFn('⟳ ' + name);
+      if (logFn && depth < 5) logFn('⟳ ' + name);
       try {
         const sub = await scanDir(h, depth+1, depth < 1 ? logFn : null);
         totalBytes += sub.totalBytes;
@@ -1291,8 +1396,8 @@ async function scanDir(handle, depth, logFn) {
           name,
           size: Math.round(sub.totalBytes/1024/1024/1024*1000)/1000,
           files: sub.fileCount,
-          items: depth < 2 ? sub.filesList.slice(0, 40) : undefined,
-          children: depth < 3 ? sub.tree : []
+          items: depth < 4 ? sub.filesList.slice(0, 100) : undefined,
+          children: depth < 5 ? sub.tree : []
         });
       } catch(e) {}
     } else {
@@ -1303,7 +1408,7 @@ async function scanDir(handle, depth, logFn) {
         const dot = name.lastIndexOf('.');
         const ext = dot > 0 ? name.slice(dot+1).toLowerCase() : '';
         if (ext) exts[ext] = (exts[ext]||0) + 1;
-        if (depth <= 2 && filesList.length < 40) {
+        if (depth <= 4 && filesList.length < 100) {
           filesList.push({ name, ext, size: Math.round(f.size/1024/1024*10)/10 });
         }
       } catch(e) {}
@@ -1319,31 +1424,83 @@ async function scanDir(handle, depth, logFn) {
 // ============================================================
 // QR
 // ============================================================
+// Postmen logo embedded
+const POSTMEN_LOGO_B64 = 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4NDEuODkgMzEyLjYxIj48cmVjdCB3aWR0aD0iODQxLjg5IiBoZWlnaHQ9IjMxMi42MSIgZmlsbD0iI0ZCRTkzMCIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iMTAxLjQ2LDE2Mi40MyAxMjUuNDIsMTYyLjQzIDE2Mi40MywxMjUuNDIgMTYyLjQzLDEwMS40NiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iMTYyLjQzLDEzOS4yNCAxMzkuMjQsMTYyLjQzIDE2Mi40MywxNjIuNDMiLz48cG9seWdvbiBmaWxsPSIjMEMwRTE0IiBwb2ludHM9IjEzNy4xMiw3NS4xOCAxMTMuMTMsNzUuMTggNzUuMTgsMTEzLjE0IDc1LjE4LDEzNy4xMiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNzUuMTgsOTguMzUgOTguMzUsNzUuMTggNzUuMTgsNzUuMTgiLz48cG9seWdvbiBmaWxsPSIjMEMwRTE0IiBwb2ludHM9IjE1MC45Miw3NS4xOCA3NS4xOCwxNTAuOTIgNzUuMTgsMTYyLjQzIDg3LjY0LDE2Mi40MyAxNjIuNDMsODcuNjMgMTYyLjQzLDc1LjE4Ii8+PHBhdGggZmlsbD0iIzBDMEUxNCIgZD0iTTIxNC40OSw3NS4xOGMxNi42NSwwLDI5LjAxLDYuOTgsMjkuMDEsMjUuMWMwLDE5LjcxLTEyLjc0LDI2LjMyLTI5Ljc1LDI2LjMyaC0yMy42M3YzNS43NWgtMTEuNTFWNzUuMThIMjE0LjQ5eiBNMTkwLjEyLDExNi45M2gyMi4xNmMxMS4xNCwwLDE5LjcxLTMuMDYsMTkuNzEtMTUuOTJjMC0xMy45Ni05LjkyLTE1LjkxLTIxLjMxLTE1LjkxaC0yMC41N1YxMTYuOTN6Ii8+PHBhdGggZmlsbD0iIzBDMEUxNCIgZD0iTTMzNi4wMywxMTguMDNjMCwyNS41OS0xNC4wOCw0Ni40LTQxLjc1LDQ2LjRjLTI3LjkxLDAtNDEuNzQtMjEuMy00MS43NC00Ni42NGMwLTI3LjE4LDE2LjI4LTQ0LjY5LDQxLjYyLTQ0LjY5QzMyMS4yMSw3My4xLDMzNi4wMyw5Mi4wOCwzMzYuMDMsMTE4LjAzeiBNMjY0LjA0LDExOC42NGMwLDIxLjc5LDExLjg3LDM1Ljg3LDMwLjM2LDM1Ljg3YzE4LjI0LDAsMzAuMTItMTQuMiwzMC4xMi0zNS44N2MwLTIxLjU1LTExLjg4LTM1LjUtMzAuMzYtMzUuNUMyNzMuNTksODMuMTQsMjY0LjA0LDEwMC4wNCwyNjQuMDQsMTE4LjY0eiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNDkwLjIzLDg1LjIyIDQ2MC45Nyw4NS4yMiA0NjAuOTcsMTYyLjM1IDQ0OS40NiwxNjIuMzUgNDQ5LjQ2LDg1LjIyIDQyMC4yLDg1LjIyIDQyMC4yLDc1LjE4IDQ5MC4yMyw3NS4xOCIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNjY2Ljk1LDg1LjIyIDYxOC4xLDg1LjIyIDYxOC4xLDExMi41MiA2NjMuNzYsMTEyLjUyIDY2My43NiwxMjIuMTkgNjE4LjEsMTIyLjE5IDYxOC4xLDE1Mi4zMSA2NjcuNTYsMTUyLjMxIDY2Ny41NiwxNjIuMzUgNjA2LjU5LDE2Mi4zNSA2MDYuNTksNzUuMTggNjY2Ljk1LDc1LjE4Ii8+PHBvbHlnb24gZmlsbD0iIzBDMEUxNCIgcG9pbnRzPSI2OTMuNDksNzUuMTggNzM5LjUyLDE0NS45NCA3MzkuNTIsNzUuMTggNzUwLjY3LDc1LjE4IDc1MC42NywxNjIuMzUgNzM3LjY5LDE2Mi4zNSA2OTEuOSw5Mi40NSA2OTEuOSwxNjIuMzUgNjgwLjg4LDE2Mi4zNSA2ODAuODgsNzUuMTgiLz48L3N2Zz4=';
+
+function buildQRSvg(url, diskName) {
+  const qr = qrcode(0, 'H');
+  qr.addData(url);
+  qr.make();
+
+  const qrSize = 240;
+  const count = qr.getModuleCount();
+  const cell = Math.floor(qrSize / count);
+  const qrActual = cell * count;
+  const pad = 16;
+  const headerH = 54;
+  const footerH = 46;
+  const totalW = qrActual + pad * 2;
+  const totalH = headerH + qrActual + pad * 2 + footerH;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${totalW}" height="${totalH}">`;
+  svg += `<rect width="${totalW}" height="${totalH}" fill="white"/>`;
+
+  // header yellow
+  svg += `<rect width="${totalW}" height="${headerH}" fill="#FBE930"/>`;
+
+  // logo in header
+  const logoW = totalW * 0.72;
+  const logoH = logoW * (312.61 / 841.89);
+  const logoX = (totalW - logoW) / 2;
+  const logoY = (headerH - logoH) / 2;
+  svg += `<image href="data:image/svg+xml;base64,${POSTMEN_LOGO_B64}" x="${logoX.toFixed(1)}" y="${logoY.toFixed(1)}" width="${logoW.toFixed(1)}" height="${logoH.toFixed(1)}"/>`;
+
+  // QR
+  const qrX = pad;
+  const qrY = headerH + pad;
+  svg += `<rect x="${qrX}" y="${qrY}" width="${qrActual}" height="${qrActual}" fill="white"/>`;
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (qr.isDark(r, c)) {
+        svg += `<rect x="${qrX+c*cell}" y="${qrY+r*cell}" width="${cell}" height="${cell}" fill="#0C0E14"/>`;
+      }
+    }
+  }
+
+  // logo in center of QR
+  const lqs = qrActual * 0.20;
+  const lqx = qrX + (qrActual - lqs) / 2;
+  const lqy = qrY + (qrActual - lqs) / 2;
+  svg += `<rect x="${(lqx-4).toFixed(1)}" y="${(lqy-4).toFixed(1)}" width="${(lqs+8).toFixed(1)}" height="${(lqs+8).toFixed(1)}" fill="white" rx="4"/>`;
+  svg += `<image href="data:image/svg+xml;base64,${POSTMEN_LOGO_B64}" x="${lqx.toFixed(1)}" y="${lqy.toFixed(1)}" width="${lqs.toFixed(1)}" height="${lqs.toFixed(1)}"/>`;
+
+  // footer dark
+  const fy = headerH + pad * 2 + qrActual;
+  svg += `<rect x="0" y="${fy}" width="${totalW}" height="${footerH}" fill="#0C0E14"/>`;
+  svg += `<text x="${totalW/2}" y="${fy+18}" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="bold" fill="#FBE930" letter-spacing="2.5">POSTMEN PRODUCTION</text>`;
+  const safeName = diskName.length > 28 ? diskName.slice(0,26)+'…' : diskName;
+  svg += `<text x="${totalW/2}" y="${fy+35}" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="white">${safeName}</text>`;
+
+  svg += `</svg>`;
+  return svg;
+}
+
 function showQR(id) {
   const entry = S.index[id] || {};
-  const base = location.origin + location.pathname;
-  const url = base + '?disk=' + id;
-  q('qr-name').textContent = entry.name || id;
+  const url = location.origin + location.pathname + '?disk=' + id;
+  const diskName = entry.name || id;
+  q('qr-name').textContent = diskName;
   q('qr-url').textContent = url;
   openModal('modal-qr');
   try {
-    const qr = qrcode(0, 'M');
-    qr.addData(url);
-    qr.make();
-    const size = 220, count = qr.getModuleCount(), cell = Math.floor(size/count), margin = 10;
-    let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+(size+margin*2)+'" height="'+(size+margin*2)+'">';
-    svg += '<rect width="100%" height="100%" fill="white"/>';
-    for (let row=0; row<count; row++) {
-      for (let col=0; col<count; col++) {
-        if (qr.isDark(row,col)) svg += '<rect x="'+(col*cell+margin)+'" y="'+(row*cell+margin)+'" width="'+cell+'" height="'+cell+'" fill="black"/>';
-      }
-    }
-    svg += '</svg>';
-    const dataUrl = 'data:image/svg+xml;base64,' + btoa(svg);
+    const svg = buildQRSvg(url, diskName);
+    const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     const img = q('qr-img');
     img.src = dataUrl;
+    img.style.width = '100%';
+    img.style.height = 'auto';
     img._svgData = svg;
-  } catch(e) { toast('QR помилка: '+e.message, 'err'); }
+  } catch(e) { toast('QR помилка: ' + e.message, 'err'); }
 }
 
 function downloadQR() {
@@ -1351,21 +1508,13 @@ function downloadQR() {
   const svg = img._svgData;
   if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
   const entry = S.index[S.currentDisk] || {};
-  const fname = 'qr-'+(entry.name||'disk').replace(/\s+/g,'_')+'.png';
-  const blob = new Blob([svg], {type:'image/svg+xml'});
-  const blobUrl = URL.createObjectURL(blob);
-  const image = new Image();
-  image.onload = function() {
-    const canvas = document.createElement('canvas');
-    canvas.width = image.width*2; canvas.height = image.height*2;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle='white'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(image,0,0,canvas.width,canvas.height);
-    URL.revokeObjectURL(blobUrl);
-    const a = document.createElement('a'); a.download=fname; a.href=canvas.toDataURL('image/png'); a.click();
-  };
-  image.src = blobUrl;
+  const fname = 'qr-' + (entry.name||'disk').replace(/\s+/g,'_') + '.svg';
+  const a = document.createElement('a');
+  a.download = fname;
+  a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  a.click();
 }
+
 
 // ============================================================
 // UTILS
