@@ -727,26 +727,26 @@ async function runSetup() {
   if (pass.length < 4) { toast('Пароль мінімум 4 символи', 'err'); return; }
 
   const hash = await sha256(login + ':' + pass);
-  // зберігаємо локально
   localStorage.setItem('diskmap2_cfg', JSON.stringify({ token, gistId, authHash: hash, authLogin: login }));
   S.token = token; S.gistId = gistId; S.authHash = hash; S.authLogin = login;
 
-  // завантажуємо існуючі дані з Gist щоб не затерти диски
-  try {
-    await loadGist();
-  } catch(e) {}
+  // завантажуємо існуючі дані — щоб не затерти диски
+  toast('Завантажуємо дані...', '');
+  await loadGist();
 
-  // оновлюємо тільки _auth, не чіпаємо диски
+  // оновлюємо тільки _auth, решта не чіпаємо
   S.disks._auth = { hash };
 
   try {
+    S._allowEmptySave = true; // дозволяємо зберегти навіть якщо дисків 0
     await saveGist();
+    S._allowEmptySave = false;
     toast('Налаштовано! Тепер увійди', 'ok');
+    nav('login');
   } catch(e) {
+    S._allowEmptySave = false;
     toast('Помилка збереження: ' + e.message, 'err');
-    return;
   }
-  nav('login');
 }
 
 // ============================================================
@@ -825,12 +825,35 @@ async function loadGist() {
 
 async function saveGist() {
   if (S.isDemo) { toast('Demo — дані не зберігаються',''); return; }
-  const r = await fetch(`https://api.github.com/gists/${S.gistId}`, {
-    method:'PATCH',
-    headers:{Authorization:`token ${S.token}`,'Content-Type':'application/json'},
-    body: JSON.stringify({files:{'diskmap.json':{content:JSON.stringify(S.disks,null,2)}}})
+
+  // ЗАХИСТ: не зберігаємо якщо дисків стало різко менше ніж в Gist
+  try {
+    const check = await fetch('https://api.github.com/gists/' + S.gistId, {
+      headers: { Authorization: 'token ' + S.token }
+    });
+    if (check.ok) {
+      const existing = await check.json();
+      const f = existing.files['diskmap.json'];
+      if (f && f.content) {
+        const old = JSON.parse(f.content);
+        const oldCount = Object.values(old).filter(v => v && v.id).length;
+        const newCount = getDisks().length;
+        if (oldCount > 0 && newCount === 0 && !S._allowEmptySave) {
+          throw new Error('Захист: спроба затерти ' + oldCount + ' дисків порожніми даними. Перезавантаж сторінку.');
+        }
+      }
+    }
+  } catch(e) {
+    if (e.message.includes('Захист')) throw e;
+    // мережева помилка при перевірці — дозволяємо зберігати
+  }
+
+  const r = await fetch('https://api.github.com/gists/' + S.gistId, {
+    method: 'PATCH',
+    headers: { Authorization: 'token ' + S.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: { 'diskmap.json': { content: JSON.stringify(S.disks, null, 2) } } })
   });
-  if (!r.ok) throw new Error('Save HTTP '+r.status);
+  if (!r.ok) throw new Error('Save HTTP ' + r.status);
 }
 
 // ============================================================
