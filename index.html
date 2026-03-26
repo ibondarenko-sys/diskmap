@@ -1425,61 +1425,80 @@ async function scanDir(handle, depth, logFn) {
 // QR
 // ============================================================
 // Postmen logo embedded
-const POSTMEN_LOGO_B64 = 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4NDEuODkgMzEyLjYxIj48cmVjdCB3aWR0aD0iODQxLjg5IiBoZWlnaHQ9IjMxMi42MSIgZmlsbD0iI0ZCRTkzMCIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iMTAxLjQ2LDE2Mi40MyAxMjUuNDIsMTYyLjQzIDE2Mi40MywxMjUuNDIgMTYyLjQzLDEwMS40NiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iMTYyLjQzLDEzOS4yNCAxMzkuMjQsMTYyLjQzIDE2Mi40MywxNjIuNDMiLz48cG9seWdvbiBmaWxsPSIjMEMwRTE0IiBwb2ludHM9IjEzNy4xMiw3NS4xOCAxMTMuMTMsNzUuMTggNzUuMTgsMTEzLjE0IDc1LjE4LDEzNy4xMiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNzUuMTgsOTguMzUgOTguMzUsNzUuMTggNzUuMTgsNzUuMTgiLz48cG9seWdvbiBmaWxsPSIjMEMwRTE0IiBwb2ludHM9IjE1MC45Miw3NS4xOCA3NS4xOCwxNTAuOTIgNzUuMTgsMTYyLjQzIDg3LjY0LDE2Mi40MyAxNjIuNDMsODcuNjMgMTYyLjQzLDc1LjE4Ii8+PHBhdGggZmlsbD0iIzBDMEUxNCIgZD0iTTIxNC40OSw3NS4xOGMxNi42NSwwLDI5LjAxLDYuOTgsMjkuMDEsMjUuMWMwLDE5LjcxLTEyLjc0LDI2LjMyLTI5Ljc1LDI2LjMyaC0yMy42M3YzNS43NWgtMTEuNTFWNzUuMThIMjE0LjQ5eiBNMTkwLjEyLDExNi45M2gyMi4xNmMxMS4xNCwwLDE5LjcxLTMuMDYsMTkuNzEtMTUuOTJjMC0xMy45Ni05LjkyLTE1LjkxLTIxLjMxLTE1LjkxaC0yMC41N1YxMTYuOTN6Ii8+PHBhdGggZmlsbD0iIzBDMEUxNCIgZD0iTTMzNi4wMywxMTguMDNjMCwyNS41OS0xNC4wOCw0Ni40LTQxLjc1LDQ2LjRjLTI3LjkxLDAtNDEuNzQtMjEuMy00MS43NC00Ni42NGMwLTI3LjE4LDE2LjI4LTQ0LjY5LDQxLjYyLTQ0LjY5QzMyMS4yMSw3My4xLDMzNi4wMyw5Mi4wOCwzMzYuMDMsMTE4LjAzeiBNMjY0LjA0LDExOC42NGMwLDIxLjc5LDExLjg3LDM1Ljg3LDMwLjM2LDM1Ljg3YzE4LjI0LDAsMzAuMTItMTQuMiwzMC4xMi0zNS44N2MwLTIxLjU1LTExLjg4LTM1LjUtMzAuMzYtMzUuNUMyNzMuNTksODMuMTQsMjY0LjA0LDEwMC4wNCwyNjQuMDQsMTE4LjY0eiIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNDkwLjIzLDg1LjIyIDQ2MC45Nyw4NS4yMiA0NjAuOTcsMTYyLjM1IDQ0OS40NiwxNjIuMzUgNDQ5LjQ2LDg1LjIyIDQyMC4yLDg1LjIyIDQyMC4yLDc1LjE4IDQ5MC4yMyw3NS4xOCIvPjxwb2x5Z29uIGZpbGw9IiMwQzBFMTQiIHBvaW50cz0iNjY2Ljk1LDg1LjIyIDYxOC4xLDg1LjIyIDYxOC4xLDExMi41MiA2NjMuNzYsMTEyLjUyIDY2My43NiwxMjIuMTkgNjE4LjEsMTIyLjE5IDYxOC4xLDE1Mi4zMSA2NjcuNTYsMTUyLjMxIDY2Ny41NiwxNjIuMzUgNjA2LjU5LDE2Mi4zNSA2MDYuNTksNzUuMTggNjY2Ljk1LDc1LjE4Ii8+PHBvbHlnb24gZmlsbD0iIzBDMEUxNCIgcG9pbnRzPSI2OTMuNDksNzUuMTggNzM5LjUyLDE0NS45NCA3MzkuNTIsNzUuMTggNzUwLjY3LDc1LjE4IDc1MC42NywxNjIuMzUgNzM3LjY5LDE2Mi4zNSA2OTEuOSw5Mi40NSA2OTEuOSwxNjIuMzUgNjgwLjg4LDE2Mi4zNSA2ODAuODgsNzUuMTgiLz48L3N2Zz4=';
+// Postmen logomark — перемальований векторно
+// Квадрат з діагональними смугами (чорний на жовтому)
+function drawLogomark(cx, cy, size) {
+  const s = size;
+  const x = cx - s/2;
+  const y = cy - s/2;
+  const r = s * 0.08; // закруглення кутів квадрата
+  const stripeW = s * 0.18; // ширина жовтої смуги
+  const id = 'lm_' + Math.random().toString(36).slice(2);
+
+  // Зовнішній квадрат з заокругленими кутами (clip)
+  let out = `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${r}"/></clipPath>`;
+
+  // Жовтий фон
+  out += `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${r}" fill="#FBE930"/>`;
+
+  // Чорна діагональна область (весь квадрат чорний, потім вирізаємо смуги)
+  out += `<g clip-path="url(#${id})">`;
+  out += `<rect x="${x}" y="${y}" width="${s}" height="${s}" fill="#0C0E14"/>`;
+
+  // 3 жовті діагональні смуги зліва-вниз направо-вгору
+  const diag = s * 2.2;
+  const offsets = [-s*0.28, s*0.14, s*0.56];
+  offsets.forEach(off => {
+    // смуга як паралелограм через transform
+    out += `<rect x="${x + off}" y="${y - s*0.1}" width="${stripeW}" height="${diag}" fill="#FBE930" transform="rotate(-45 ${cx} ${cy})"/>`;
+  });
+
+  out += `</g>`;
+  return out;
+}
 
 function buildQRSvg(url, diskName) {
   const qr = qrcode(0, 'H');
   qr.addData(url);
   qr.make();
 
-  const qrSize = 240;
   const count = qr.getModuleCount();
-  const cell = Math.floor(qrSize / count);
+  const cell = 9;
   const qrActual = cell * count;
-  const pad = 16;
-  const headerH = 54;
-  const footerH = 46;
+  const pad = 20;
   const totalW = qrActual + pad * 2;
-  const totalH = headerH + qrActual + pad * 2 + footerH;
+  const totalH = totalW;
+  const cr = 14; // corner radius всього QR
 
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${totalW}" height="${totalH}">`;
-  svg += `<rect width="${totalW}" height="${totalH}" fill="white"/>`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">`;
 
-  // header yellow
-  svg += `<rect width="${totalW}" height="${headerH}" fill="#FBE930"/>`;
+  // білий фон з заокругленими кутами
+  svg += `<rect width="${totalW}" height="${totalH}" rx="${cr}" fill="white"/>`;
 
-  // logo in header
-  const logoW = totalW * 0.72;
-  const logoH = logoW * (312.61 / 841.89);
-  const logoX = (totalW - logoW) / 2;
-  const logoY = (headerH - logoH) / 2;
-  svg += `<image href="data:image/svg+xml;base64,${POSTMEN_LOGO_B64}" x="${logoX.toFixed(1)}" y="${logoY.toFixed(1)}" width="${logoW.toFixed(1)}" height="${logoH.toFixed(1)}"/>`;
-
-  // QR
+  // QR модулі з заокругленими кутами
   const qrX = pad;
-  const qrY = headerH + pad;
-  svg += `<rect x="${qrX}" y="${qrY}" width="${qrActual}" height="${qrActual}" fill="white"/>`;
+  const qrY = pad;
+  const moduleR = cell * 0.2; // закруглення кожного модуля
+
   for (let r = 0; r < count; r++) {
     for (let c = 0; c < count; c++) {
       if (qr.isDark(r, c)) {
-        svg += `<rect x="${qrX+c*cell}" y="${qrY+r*cell}" width="${cell}" height="${cell}" fill="#0C0E14"/>`;
+        const mx = qrX + c * cell;
+        const my = qrY + r * cell;
+        svg += `<rect x="${mx}" y="${my}" width="${cell}" height="${cell}" rx="${moduleR}" fill="#0C0E14"/>`;
       }
     }
   }
 
-  // logo in center of QR
-  const lqs = qrActual * 0.20;
-  const lqx = qrX + (qrActual - lqs) / 2;
-  const lqy = qrY + (qrActual - lqs) / 2;
-  svg += `<rect x="${(lqx-4).toFixed(1)}" y="${(lqy-4).toFixed(1)}" width="${(lqs+8).toFixed(1)}" height="${(lqs+8).toFixed(1)}" fill="white" rx="4"/>`;
-  svg += `<image href="data:image/svg+xml;base64,${POSTMEN_LOGO_B64}" x="${lqx.toFixed(1)}" y="${lqy.toFixed(1)}" width="${lqs.toFixed(1)}" height="${lqs.toFixed(1)}"/>`;
+  // логомарк в центрі
+  const logoSize = cell * 7;
+  const logoCx = totalW / 2;
+  const logoCy = totalH / 2;
 
-  // footer dark
-  const fy = headerH + pad * 2 + qrActual;
-  svg += `<rect x="0" y="${fy}" width="${totalW}" height="${footerH}" fill="#0C0E14"/>`;
-  svg += `<text x="${totalW/2}" y="${fy+18}" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="bold" fill="#FBE930" letter-spacing="2.5">POSTMEN PRODUCTION</text>`;
-  const safeName = diskName.length > 28 ? diskName.slice(0,26)+'…' : diskName;
-  svg += `<text x="${totalW/2}" y="${fy+35}" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="white">${safeName}</text>`;
+  // білий буфер навколо лого
+  const buf = 4;
+  svg += `<rect x="${logoCx - logoSize/2 - buf}" y="${logoCy - logoSize/2 - buf}" width="${logoSize + buf*2}" height="${logoSize + buf*2}" rx="${logoSize*0.1}" fill="white"/>`;
+  svg += drawLogomark(logoCx, logoCy, logoSize);
 
   svg += `</svg>`;
   return svg;
