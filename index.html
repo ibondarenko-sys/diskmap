@@ -402,6 +402,35 @@ body::before {
 .file-row { opacity: 0.85; }
 .file-row:hover { opacity: 1; }
 
+/* PIN PAD */
+.pin-display {
+  display: flex; gap: 12px; justify-content: center;
+  margin: 28px 0 8px;
+}
+.pin-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border2);
+  transition: all 0.15s;
+}
+.pin-dot.filled { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px rgba(0,212,255,0.4); }
+.pin-dot.error { background: var(--red); border-color: var(--red); }
+.pin-error { text-align: center; font-size: 12px; color: var(--red); height: 20px; margin-bottom: 20px; opacity: 0; transition: opacity 0.2s; }
+.pin-error.show { opacity: 1; }
+.pin-pad {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px; max-width: 260px; margin: 0 auto 24px;
+}
+.pin-btn {
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--text); font-family: var(--display); font-size: 20px; font-weight: 700;
+  padding: 18px; border-radius: var(--r); cursor: pointer;
+  transition: all 0.1s; user-select: none; -webkit-user-select: none;
+}
+.pin-btn:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+.pin-btn:active { transform: scale(0.94); background: var(--accent-dim); }
+.pin-btn-ghost { background: transparent; border-color: transparent; font-size: 16px; color: var(--text3); }
+.pin-btn-ghost:hover { color: var(--text); border-color: var(--border); }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -416,35 +445,17 @@ body::before {
   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
   <div class="setup-wrap">
     <h1>DiskMap <span style="color:var(--text3);font-size:14px;font-weight:400">setup</span></h1>
-    <p class="sub">Налаштуй підключення один раз — потім доступ з будь-якого пристрою</p>
+    <p class="sub">Конфігурація вшита в файл. Тут можна згенерувати новий PIN хеш для оновлення.</p>
     <div class="setup-box">
-      <div class="setup-section-title">GitHub Gist</div>
-      <div class="note">
-        1. Створи <a href="https://gist.github.com" target="_blank">Secret Gist</a> з файлом <code>diskmap.json</code> і вмістом <code>{}</code><br>
-        2. Згенеруй <a href="https://github.com/settings/tokens" target="_blank">токен</a> з правом <code>gist</code>
-      </div>
+      <div class="setup-section-title">Згенерувати новий PIN</div>
+      <div class="note">Введи новий PIN → отримаєш хеш → вшити в файл у змінну <code>CFG.pinHash</code></div>
       <div class="field">
-        <label>GitHub Token</label>
-        <input type="password" id="s-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-      </div>
-      <div class="field">
-        <label>Gist ID</label>
-        <input type="text" id="s-gist" placeholder="abc123def456">
-        <div class="field-hint">Частина URL: gist.github.com/yourname/<strong>ЦЕЙ_ID</strong></div>
-      </div>
-      <div class="setup-section-title">Доступ для команди</div>
-      <div class="note">Єдиний логін і пароль — роздаєш команді. Зберігається захешовано у Gist.</div>
-      <div class="field">
-        <label>Логін (username)</label>
-        <input type="text" id="s-login" placeholder="postmen">
-      </div>
-      <div class="field">
-        <label>Пароль</label>
-        <input type="password" id="s-pass" placeholder="мінімум 4 символи">
+        <label>Новий PIN</label>
+        <input type="password" id="s-pin" placeholder="1234" maxlength="6" inputmode="numeric" pattern="[0-9]*">
       </div>
       <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-full" onclick="runSetup()">Зберегти та запустити →</button>
-        <button class="btn btn-ghost btn-full" onclick="repairGist()" style="font-size:11px">🔧 Перевірити і відновити Gist</button>
+        <button class="btn btn-primary btn-full" onclick="runSetup()">Згенерувати хеш →</button>
+        <button class="btn btn-ghost btn-full" onclick="nav('login')" style="font-size:11px">← Назад</button>
       </div>
     </div>
   </div>
@@ -456,21 +467,34 @@ body::before {
   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
   <div class="login-wrap">
     <div class="login-logo">Disk<span>Map</span></div>
-    <div class="login-sub">Production Storage System</div>
-    <div class="login-box">
-      <div class="field">
-        <label>Логін</label>
-        <input type="text" id="l-login" placeholder="username" autocomplete="username">
-      </div>
-      <div class="field">
-        <label>Пароль</label>
-        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"
-          onkeydown="if(event.key==='Enter')doLogin()">
-      </div>
-      <div class="login-error" id="login-error">Невірний логін або пароль</div>
-      <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="doLogin()">Увійти →</button>
+    <div class="login-sub">Postmen Production</div>
+
+    <div class="pin-display" id="pin-display">
+      <span class="pin-dot" id="pd0"></span>
+      <span class="pin-dot" id="pd1"></span>
+      <span class="pin-dot" id="pd2"></span>
+      <span class="pin-dot" id="pd3"></span>
+      <span class="pin-dot" id="pd4"></span>
+      <span class="pin-dot" id="pd5"></span>
     </div>
-    <div class="login-setup-link"><a onclick="nav('setup')">⚙ Налаштування підключення</a></div>
+    <div class="pin-error" id="pin-error">Невірний PIN</div>
+
+    <div class="pin-pad">
+      <button class="pin-btn" onclick="pinPress('1')">1</button>
+      <button class="pin-btn" onclick="pinPress('2')">2</button>
+      <button class="pin-btn" onclick="pinPress('3')">3</button>
+      <button class="pin-btn" onclick="pinPress('4')">4</button>
+      <button class="pin-btn" onclick="pinPress('5')">5</button>
+      <button class="pin-btn" onclick="pinPress('6')">6</button>
+      <button class="pin-btn" onclick="pinPress('7')">7</button>
+      <button class="pin-btn" onclick="pinPress('8')">8</button>
+      <button class="pin-btn" onclick="pinPress('9')">9</button>
+      <button class="pin-btn pin-btn-ghost" onclick="pinClear()">✕</button>
+      <button class="pin-btn" onclick="pinPress('0')">0</button>
+      <button class="pin-btn pin-btn-ghost" onclick="pinBackspace()">⌫</button>
+    </div>
+
+    <div class="login-setup-link"><a onclick="nav('setup')">⚙ Налаштування</a></div>
   </div>
   </div>
 </div>
@@ -616,37 +640,37 @@ const DEMO_DISKS = {
 };
 
 // ============================================================
+// HARDCODED CONFIG — вшито в файл
+// ============================================================
+const CFG = {
+  token: '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',
+  indexGistId: '05bfaa17bdc533e6f76a8f9e293fc4b4',
+  pinHash: '6e407bce01f96ed15b173996a6cf15ee9100e5564dd4c737df4c4d3eb58fd373'
+};
+
+// ============================================================
 // INIT
 // ============================================================
 function init() {
+  // завжди беремо конфіг з вшитих констант
+  S.token = CFG.token;
+  S.indexGistId = CFG.indexGistId;
+  S.authHash = CFG.pinHash;
+
   const params = new URLSearchParams(location.search);
   const diskParam = params.get('disk');
-  const gistParam = params.get('g');
 
-  const raw = localStorage.getItem('diskmap3_cfg');
-  if (raw) {
-    const cfg = JSON.parse(raw);
-    S.token = cfg.token; S.indexGistId = cfg.indexGistId;
-    S.authHash = cfg.authHash; S.authLogin = cfg.authLogin;
-    const sess = sessionStorage.getItem('diskmap3_sess');
-    if (sess) {
-      S.loggedIn = true; S.username = sess;
-      loadIndex().then(afterLogin);
-    } else {
-      nav('login');
-    }
-    return;
-  }
-
-  if (diskParam || gistParam) {
-    if (gistParam) {
-      S.indexGistId = gistParam;
-      fetchAuthFromIndex(gistParam).then(() => nav('login'));
-    } else {
-      nav('login');
-    }
+  const sess = sessionStorage.getItem('diskmap3_sess');
+  if (sess) {
+    S.loggedIn = true; S.username = sess;
+    loadIndex().then(() => {
+      if (diskParam && S.index[diskParam]) showDisk(diskParam);
+      else afterLogin();
+    });
   } else {
-    nav('setup');
+    // якщо прийшли по QR з disk параметром — зберігаємо і показуємо логін
+    if (diskParam) sessionStorage.setItem('diskmap3_pending_disk', diskParam);
+    nav('login');
   }
 }
 
@@ -690,38 +714,67 @@ async function repairGist() {
 // SETUP
 // ============================================================
 async function runSetup() {
-  const token = q('s-token').value.trim();
-  const gistId = q('s-gist').value.trim();
-  const login = q('s-login').value.trim();
-  const pass = q('s-pass').value.trim();
-  if (!token || !gistId || !login || !pass) { toast('Заповни всі поля', 'err'); return; }
-  if (pass.length < 4) { toast('Пароль мінімум 4 символи', 'err'); return; }
-
-  const hash = await sha256(login + ':' + pass);
-  localStorage.setItem('diskmap3_cfg', JSON.stringify({ token, indexGistId: gistId, authHash: hash, authLogin: login }));
-  S.token = token; S.indexGistId = gistId; S.authHash = hash; S.authLogin = login;
-
-  toast('Завантажуємо індекс...', '');
-  await loadIndex();
-  S.index._auth = { hash };
-
-  try {
-    await saveIndex();
-    toast('Налаштовано! Тепер увійди', 'ok');
-    nav('login');
-  } catch(e) {
-    toast('Помилка: ' + e.message, 'err');
+  const pin = q('s-pin').value.trim();
+  if (!pin || pin.length < 4 || !/^\d+$/.test(pin)) {
+    toast('PIN — від 4 до 6 цифр', 'err'); return;
   }
+  // PIN хеш зберігаємо в Gist щоб синхронізувати між пристроями
+  // Але в цій версії конфіг вшитий — просто показуємо новий хеш
+  const hash = await sha256('pin:' + pin);
+  toast('Новий PIN хеш: ' + hash.slice(0,16) + '... (вшити в файл)', 'ok');
+  nav('login');
 }
 
 // ============================================================
-// AUTH
+// AUTH — PIN
 // ============================================================
-async function doLogin() {
-  const login = q('l-login').value.trim();
-  const pass = q('l-pass').value.trim();
+let _pin = '';
 
-  if (login === 'demo' && pass === 'demo') {
+function pinPress(digit) {
+  if (_pin.length >= 6) return;
+  _pin += digit;
+  updatePinDisplay();
+  if (_pin.length >= 4) {
+    // автоматично перевіряємо після 4+ цифр з невеликою затримкою
+    clearTimeout(pinPress._t);
+    pinPress._t = setTimeout(doLogin, 300);
+  }
+}
+
+function pinBackspace() {
+  _pin = _pin.slice(0, -1);
+  updatePinDisplay();
+}
+
+function pinClear() {
+  _pin = '';
+  updatePinDisplay();
+  q('pin-error').classList.remove('show');
+}
+
+function updatePinDisplay() {
+  for (let i = 0; i < 6; i++) {
+    const dot = q('pd' + i);
+    if (!dot) continue;
+    dot.classList.toggle('filled', i < _pin.length);
+    dot.classList.remove('error');
+  }
+}
+
+// також підтримуємо введення з клавіатури
+document.addEventListener('keydown', function(e) {
+  if (document.getElementById('view-login').classList.contains('active')) {
+    if (e.key >= '0' && e.key <= '9') pinPress(e.key);
+    else if (e.key === 'Backspace') pinBackspace();
+    else if (e.key === 'Escape') pinClear();
+  }
+});
+
+async function doLogin() {
+  clearTimeout(pinPress._t);
+
+  // demo режим
+  if (_pin === '0000') {
     S.isDemo = true; S.loggedIn = true; S.username = 'demo';
     sessionStorage.setItem('diskmap3_sess', 'demo');
     S.index = {};
@@ -733,30 +786,50 @@ async function doLogin() {
   }
 
   if (!S.authHash) {
-    q('login-error').textContent = 'Конфігурацію не знайдено. Зверніться до адміністратора.';
-    q('login-error').classList.add('show'); return;
+    q('pin-error').textContent = 'Конфігурацію не знайдено';
+    q('pin-error').classList.add('show');
+    pinShakeAndClear(); return;
   }
-  const hash = await sha256(login + ':' + pass);
+
+  const hash = await sha256('pin:' + _pin);
   if (hash !== S.authHash) {
-    q('login-error').textContent = 'Невірний логін або пароль';
-    q('login-error').classList.add('show'); return;
+    q('pin-error').textContent = 'Невірний PIN';
+    q('pin-error').classList.add('show');
+    pinShakeAndClear(); return;
   }
-  q('login-error').classList.remove('show');
-  S.loggedIn = true; S.username = login;
-  sessionStorage.setItem('diskmap3_sess', login);
+
+  q('pin-error').classList.remove('show');
+  S.loggedIn = true; S.username = 'user';
+  sessionStorage.setItem('diskmap3_sess', 'user');
   await loadIndex();
   afterLogin();
+}
+
+function pinShakeAndClear() {
+  // підсвічуємо крапки червоним
+  for (let i = 0; i < _pin.length; i++) {
+    const dot = q('pd' + i);
+    if (dot) { dot.classList.remove('filled'); dot.classList.add('error'); }
+  }
+  setTimeout(() => { _pin = ''; updatePinDisplay(); }, 600);
 }
 
 function doLogout() {
   sessionStorage.removeItem('diskmap3_sess');
   S.loggedIn = false; S.username = '';
+  _pin = '';
+  updatePinDisplay();
   nav('login');
 }
 
 function afterLogin() {
   q('header-username').textContent = S.username;
   nav('app');
+  const pendingDisk = sessionStorage.getItem('diskmap3_pending_disk');
+  if (pendingDisk) {
+    sessionStorage.removeItem('diskmap3_pending_disk');
+    if (S.index[pendingDisk]) { showDisk(pendingDisk); return; }
+  }
   const params = new URLSearchParams(location.search);
   const diskId = params.get('disk');
   if (diskId && S.index[diskId]) showDisk(diskId);
@@ -1236,7 +1309,7 @@ async function scanDir(handle, depth, logFn) {
 function showQR(id) {
   const entry = S.index[id] || {};
   const base = location.origin + location.pathname;
-  const url = base + '?g=' + S.indexGistId + '&disk=' + id;
+  const url = base + '?disk=' + id;
   q('qr-name').textContent = entry.name || id;
   q('qr-url').textContent = url;
   openModal('modal-qr');
