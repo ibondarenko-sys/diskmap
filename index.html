@@ -706,6 +706,15 @@ body::before {
     <div class="modal-sub">Роздрукуй і наклей на диск</div>
     <div class="qr-wrap"><img id="qr-img" style="width:220px;height:220px" alt="QR"></div>
     <div class="qr-url" id="qr-url"></div>
+    <div class="field" style="margin-bottom:16px">
+      <label>Розмір наліпки</label>
+      <select id="qr-size-select" style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 12px;font-family:var(--mono);font-size:12px;border-radius:var(--r);outline:none">
+        <option value="4">4 × 4 см (маленька)</option>
+        <option value="6" selected>6 × 6 см (стандарт)</option>
+        <option value="8">8 × 8 см (велика)</option>
+        <option value="10">10 × 10 см (дуже велика)</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="downloadQR()">↓ Завантажити PNG</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-qr')">Закрити</button>
@@ -1720,12 +1729,57 @@ function downloadQR() {
   const img = q('qr-img');
   const svg = img._svgData;
   if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
+
   const entry = S.index[S.currentDisk] || {};
-  const fname = 'qr-' + (entry.name||'disk').replace(/\s+/g,'_') + '.svg';
-  const a = document.createElement('a');
-  a.download = fname;
-  a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  a.click();
+  const fname = 'qr-' + (entry.name||'disk').replace(/\s+/g,'_');
+
+  // розмір в см → пікселі при 300 DPI (1 см = 118.11 px при 300 DPI)
+  const sizeSelect = q('qr-size-select');
+  const cm = parseFloat(sizeSelect?.value || 6);
+  const px = Math.round(cm * 118.11);
+
+  toast('Генерую PNG ' + cm + '×' + cm + ' см...', '');
+
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const blobUrl = URL.createObjectURL(blob);
+  const image = new Image();
+
+  image.onload = function() {
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext('2d');
+
+    // білий фон
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, px, px);
+
+    // малюємо SVG масштабованим до потрібного розміру
+    ctx.drawImage(image, 0, 0, px, px);
+
+    URL.revokeObjectURL(blobUrl);
+
+    canvas.toBlob(function(pngBlob) {
+      const a = document.createElement('a');
+      a.download = fname + '_' + cm + 'cm.png';
+      a.href = URL.createObjectURL(pngBlob);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      toast('PNG збережено (' + cm + '×' + cm + ' см, 300 DPI)', 'ok');
+    }, 'image/png');
+  };
+
+  image.onerror = function() {
+    URL.revokeObjectURL(blobUrl);
+    // fallback — SVG
+    const a = document.createElement('a');
+    a.download = fname + '.svg';
+    a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    a.click();
+    toast('Збережено як SVG', '');
+  };
+
+  image.src = blobUrl;
 }
 
 
