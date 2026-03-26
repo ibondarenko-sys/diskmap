@@ -700,6 +700,8 @@ async function repairGist() {
     }
   } catch(e) { toast('Помилка: ' + e.message, 'err'); }
 }
+
+async function fetchAuthFromGist(gistId) {
   try {
     const r = await fetch('https://api.github.com/gists/' + gistId);
     if (!r.ok) return;
