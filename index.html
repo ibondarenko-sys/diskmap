@@ -846,6 +846,23 @@ async function loadIndex() {
 
 async function saveIndex() {
   if (S.isDemo) return;
+
+  // ЗАХИСТ: спочатку читаємо що зараз в Gist
+  try {
+    const check = await fetch(CFG.apiUrl + '/index');
+    if (check.ok) {
+      const existing = await check.json();
+      const existingCount = Object.values(existing).filter(v => v && v.id).length;
+      const newCount = Object.values(S.index).filter(v => v && v.id).length;
+      if (existingCount > newCount) {
+        // відновлюємо диски які є в Gist але зникли з пам'яті
+        Object.entries(existing).forEach(([k, v]) => {
+          if (v && v.id && !S.index[k]) S.index[k] = v;
+        });
+      }
+    }
+  } catch(e) { /* якщо не вдалось перевірити — не блокуємо збереження */ }
+
   const r = await fetch(CFG.apiUrl + '/index', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -871,8 +888,9 @@ async function loadDiskData(diskId) {
 async function saveDiskData(diskId) {
   if (S.isDemo) return;
   const disk = S.disks[diskId];
-  if (!disk) return;
+  if (!disk) throw new Error('Диск не знайдено в пам\'яті');
   const entry = S.index[diskId];
+  if (!entry) throw new Error('Диск не знайдено в індексі');
 
   // якщо ще немає Gist для диску — створюємо
   if (!entry.gistId) {
@@ -882,8 +900,10 @@ async function saveDiskData(diskId) {
       body: JSON.stringify({ name: disk.name })
     });
     const data = await r.json();
-    if (!data.ok || !data.id) throw new Error('Не вдалось створити Gist для диску');
+    if (!data.ok || !data.id) throw new Error('Не вдалось створити сховище для диску');
     entry.gistId = data.id;
+    // оновлюємо індекс одразу
+    S.index[diskId] = entry;
     await saveIndex();
   }
 
