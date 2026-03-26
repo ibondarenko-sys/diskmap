@@ -160,7 +160,9 @@ body::before {
   padding: 0 20px; height: 52px;
   display: flex; align-items: center; gap: 12px;
 }
-.header-logo { font-family: var(--display); font-size: 14px; font-weight: 900; color: var(--accent); letter-spacing: -0.5px; cursor: pointer; flex-shrink: 0; }
+.header-logo { font-family: var(--display); font-size: 14px; font-weight: 900; color: var(--accent); letter-spacing: -0.5px; cursor: pointer; flex-shrink: 0; display: flex; align-items: baseline; gap: 0; }
+.header-logo span { color: var(--text3); font-weight: 400; }
+.header-logo em { font-style: normal; font-size: 9px; color: var(--text3); font-family: var(--mono); font-weight: 400; letter-spacing: 1px; text-transform: uppercase; margin-left: 8px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px; }
 .header-logo span { color: var(--text3); font-weight: 400; }
 .header-sep { flex: 1; }
 .header-search-wrap { flex: 1; max-width: 320px; position: relative; }
@@ -397,6 +399,28 @@ body::before {
 .ext-badge { font-size: 9px; padding: 2px 5px; border-radius: 3px; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
 .ext-cnt { opacity: 0.7; font-weight: 400; }
 
+/* Mobile tree: name full width, exts below */
+@media (max-width: 768px) {
+  .tree-row { flex-wrap: wrap; padding: 8px 12px 8px 0; align-items: flex-start; }
+  .tree-name { font-size: 13px; min-width: 0; flex: 1 1 auto; }
+  .tree-exts { display: none; } /* hidden inline on mobile */
+  .tree-exts-mobile { display: flex !important; }
+  .tree-count { font-size: 10px; flex-shrink: 0; }
+  .tree-bar-mini { display: none; }
+  .tree-size { font-size: 11px; min-width: 56px; text-align: right; }
+  .tree-toggle { flex-shrink: 0; }
+  .tree-ico { flex-shrink: 0; }
+  /* exts row below name */
+  .tree-row-exts {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    padding: 3px 12px 7px;
+    padding-left: calc(18px + 18px + 18px + 6px); /* indent + toggle + ico */
+    border-bottom: 1px solid var(--border);
+  }
+  .tree-row-exts .ext-badge { font-size: 9px; }
+  .tree-node > .tree-row { border-bottom: none; }
+}
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -472,7 +496,7 @@ body::before {
 <!-- ===== MAIN APP ===== -->
 <div class="view" id="view-app">
   <header class="app-header">
-    <div class="header-logo" onclick="showList()">Disk<span>Map</span></div>
+    <div class="header-logo" onclick="showList()">Disk<span>Map</span><em>Postmen Production</em></div>
     <div class="header-search-wrap">
       <span class="search-icon">⌕</span>
       <input class="header-search" id="global-search" placeholder="Пошук проектів, папок..." oninput="onSearch(this.value)" onblur="setTimeout(()=>closeSearch(),200)">
@@ -804,7 +828,7 @@ function showDisk(id) {
 // SIDEBAR
 // ============================================================
 function updateSidebar() {
-  const disks = Object.values(S.disks);
+  const disks = getDisks();
   q('disks-count-badge').textContent = disks.length;
   const el = q('sidebar-disks');
   el.innerHTML = disks.map(d => {
@@ -821,7 +845,7 @@ function updateSidebar() {
 // RENDER LIST
 // ============================================================
 function renderList() {
-  const disks = Object.values(S.disks);
+  const disks = getDisks();
   const main = q('main-content');
   let html = `<div class="page-title">Всі диски</div>
     <div class="page-sub">${disks.length} дисків · ${S.isDemo ? 'demo режим' : 'синхронізовано з Gist'}</div>
@@ -913,21 +937,35 @@ function renderTree(nodes, totalSize, depth) {
     const hasChildren = node.children && node.children.length > 0;
     const uid = 'tree_' + Math.random().toString(36).slice(2);
     const indentPx = depth * 16 + 18;
-    const extBadges = renderExtBadges(node.exts);
+    const extBadgesInline = renderExtBadges(node.exts);
+    const extBadgesMobile = renderExtBadgesMobile(node.exts, depth);
+
     return '<div class="tree-node">' +
       '<div class="tree-row" onclick="toggleTree(\'' + uid + '\',this)">' +
         '<div class="tree-indent" style="width:' + indentPx + 'px"></div>' +
         '<div class="tree-toggle">' + (hasChildren ? '▶' : '&nbsp;') + '</div>' +
         '<div class="tree-ico">' + (hasChildren ? '📁' : '📄') + '</div>' +
         '<div class="tree-name">' + esc(node.name) + '</div>' +
-        '<div class="tree-exts">' + extBadges + '</div>' +
+        '<div class="tree-exts">' + extBadgesInline + '</div>' +
         '<div class="tree-count">' + (node.files ? node.files.toLocaleString() + ' ф.' : '') + '</div>' +
         '<div class="tree-bar-mini"><div class="tree-bar-fill" style="width:' + Math.min(pct * 3, 100) + '%"></div></div>' +
         '<div class="tree-size">' + fmtGB(node.size) + '</div>' +
       '</div>' +
+      extBadgesMobile +
       (hasChildren ? '<div class="tree-children" id="' + uid + '">' + renderTree(node.children, totalSize, depth + 1) + '</div>' : '') +
     '</div>';
   }).join('');
+}
+
+function renderExtBadgesMobile(exts, depth) {
+  if (!exts || !Object.keys(exts).length) return '';
+  const indentPx = depth * 16 + 18 + 18 + 20 + 6; // indent + toggle + ico + gap
+  const sorted = Object.entries(exts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const badges = sorted.map(([ext, cnt]) => {
+    const cat = getExtCat(ext);
+    return '<span class="ext-badge" style="color:' + cat.color + ';background:' + cat.bg + '">' + ext + ' <span class="ext-cnt">' + cnt + '</span></span>';
+  }).join('');
+  return '<div class="tree-row-exts" style="padding-left:' + indentPx + 'px">' + badges + '</div>';
 }
 
 // Ext badge colors by category
@@ -1003,7 +1041,7 @@ function onSearch(val) {
   if (!val || val.length < 2) { dd.classList.remove('open'); return; }
   const results = [];
   const q2 = val.toLowerCase();
-  Object.values(S.disks).forEach(disk => {
+  getDisks().forEach(disk => {
     searchTree(disk.tree||[], q2, disk, [], results);
   });
   if (!results.length) {
@@ -1216,6 +1254,7 @@ function downloadQR() {
 // UTILS
 // ============================================================
 function q(id) { return document.getElementById(id); }
+function getDisks() { return Object.values(S.disks).filter(d => d && d.id); }
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function fmtGB(gb) {
