@@ -640,11 +640,10 @@ const DEMO_DISKS = {
 };
 
 // ============================================================
-// HARDCODED CONFIG — вшито в файл
+// HARDCODED CONFIG — тільки публічні дані, токен на Cloudflare
 // ============================================================
 const CFG = {
-  token: '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',
-  indexGistId: '05bfaa17bdc533e6f76a8f9e293fc4b4',
+  apiUrl: 'https://diskmap-api.ibondarenko.workers.dev',
   pinHash: '6e407bce01f96ed15b173996a6cf15ee9100e5564dd4c737df4c4d3eb58fd373'
 };
 
@@ -652,23 +651,19 @@ const CFG = {
 // INIT
 // ============================================================
 function init() {
-  // завжди беремо конфіг з вшитих констант
-  S.token = CFG.token;
-  S.indexGistId = CFG.indexGistId;
   S.authHash = CFG.pinHash;
 
   const params = new URLSearchParams(location.search);
   const diskParam = params.get('disk');
-
   const sess = sessionStorage.getItem('diskmap3_sess');
+
   if (sess) {
-    S.loggedIn = true; S.username = sess;
+    S.loggedIn = true; S.username = 'user';
     loadIndex().then(() => {
       if (diskParam && S.index[diskParam]) showDisk(diskParam);
       else afterLogin();
     });
   } else {
-    // якщо прийшли по QR з disk параметром — зберігаємо і показуємо логін
     if (diskParam) sessionStorage.setItem('diskmap3_pending_disk', diskParam);
     nav('login');
   }
@@ -837,26 +832,26 @@ function afterLogin() {
 }
 
 // ============================================================
-// MULTI-GIST API
+// API через Cloudflare Worker
 // ============================================================
 async function loadIndex() {
   if (S.isDemo) return;
-  const headers = S.token ? { Authorization: 'token ' + S.token } : {};
   try {
-    const r = await fetch('https://api.github.com/gists/' + S.indexGistId, { headers });
+    const r = await fetch(CFG.apiUrl + '/index');
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    const f = d.files['index.json'];
-    if (!f || !f.content) return;
-    const parsed = JSON.parse(f.content.trim());
-    if (parsed && typeof parsed === 'object') S.index = parsed;
-  } catch(e) { toast('Помилка індексу: ' + e.message, 'err'); }
+    const data = await r.json();
+    if (data && typeof data === 'object') S.index = data;
+  } catch(e) { toast('Помилка завантаження: ' + e.message, 'err'); }
 }
 
 async function saveIndex() {
   if (S.isDemo) return;
-  const r = await patchGist(S.indexGistId, S.token, 'index.json', JSON.stringify(S.index, null, 2));
-  if (!r.ok) throw new Error('Index save HTTP ' + r.status);
+  const r = await fetch(CFG.apiUrl + '/index', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(S.index)
+  });
+  if (!r.ok) throw new Error('Index save failed');
 }
 
 async function loadDiskData(diskId) {
@@ -865,16 +860,11 @@ async function loadDiskData(diskId) {
   const entry = S.index[diskId];
   if (!entry || !entry.gistId) return null;
   try {
-    const r = await fetch('https://api.github.com/gists/' + entry.gistId, {
-      headers: { Authorization: 'token ' + S.token }
-    });
+    const r = await fetch(CFG.apiUrl + '/disk/' + entry.gistId);
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    const f = d.files['disk.json'];
-    if (!f || !f.content) return null;
-    const parsed = JSON.parse(f.content.trim());
-    S.disks[diskId] = parsed;
-    return parsed;
+    const data = await r.json();
+    S.disks[diskId] = data;
+    return data;
   } catch(e) { toast('Помилка завантаження диску: ' + e.message, 'err'); return null; }
 }
 
@@ -883,34 +873,32 @@ async function saveDiskData(diskId) {
   const disk = S.disks[diskId];
   if (!disk) return;
   const entry = S.index[diskId];
+
+  // якщо ще немає Gist для диску — створюємо
   if (!entry.gistId) {
-    const created = await createDiskGist(disk.name);
-    entry.gistId = created.id;
+    const r = await fetch(CFG.apiUrl + '/disk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: disk.name })
+    });
+    const data = await r.json();
+    if (!data.ok || !data.id) throw new Error('Не вдалось створити Gist для диску');
+    entry.gistId = data.id;
     await saveIndex();
   }
-  const json = JSON.stringify(disk, null, 2);
-  if (json.length > 8000000) { stripItems(disk.tree); }
-  const r = await patchGist(entry.gistId, S.token, 'disk.json', JSON.stringify(disk, null, 2));
-  if (!r.ok) throw new Error('Disk save HTTP ' + r.status);
-}
 
-async function createDiskGist(name) {
-  const r = await fetch('https://api.github.com/gists', {
-    method: 'POST',
-    headers: { Authorization: 'token ' + S.token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description: 'DiskMap: ' + name, public: false, files: { 'disk.json': { content: '{}' } } })
-  });
-  if (!r.ok) throw new Error('Create gist HTTP ' + r.status);
-  return await r.json();
-}
+  // перевірка розміру
+  if (JSON.stringify(disk).length > 8000000) stripItems(disk.tree);
 
-async function patchGist(gistId, token, filename, content) {
-  return fetch('https://api.github.com/gists/' + gistId, {
+  const r = await fetch(CFG.apiUrl + '/disk/' + entry.gistId, {
     method: 'PATCH',
-    headers: { Authorization: 'token ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: { [filename]: { content } } })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(disk)
   });
+  if (!r.ok) throw new Error('Disk save failed');
 }
+
+async function patchGist() {} // більше не потрібна, залишаємо для сумісності
 
 // ============================================================
 // NAVIGATION
