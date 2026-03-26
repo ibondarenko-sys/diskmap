@@ -467,6 +467,20 @@ body::before {
 .pin-btn-ghost { background: transparent; border-color: transparent; font-size: 16px; color: var(--text3); }
 .pin-btn-ghost:hover { color: var(--text); border-color: var(--border); }
 
+.note-delete-btn {
+  margin-left: auto; background: none; border: none;
+  color: var(--text3); cursor: pointer; font-size: 11px;
+  padding: 2px 6px; border-radius: 3px; line-height: 1;
+  transition: all 0.15s;
+}
+.note-delete-btn:hover { color: var(--red); background: var(--red-dim); }
+
+.search-more {
+  padding: 10px 14px; text-align: center; font-size: 11px;
+  color: var(--accent); cursor: pointer; border-top: 1px solid var(--border);
+}
+.search-more:hover { background: var(--accent-dim); }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -487,7 +501,7 @@ body::before {
       <div class="note">Введи новий PIN → отримаєш хеш → вшити в файл у змінну <code>CFG.pinHash</code></div>
       <div class="field">
         <label>Новий PIN</label>
-        <input type="password" id="s-pin" placeholder="1234" maxlength="6" inputmode="numeric" pattern="[0-9]*">
+        <input type="password" id="s-pin" placeholder="1234" maxlength="4" inputmode="numeric" pattern="[0-9]*">
       </div>
       <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-full" onclick="runSetup()">Згенерувати хеш →</button>
@@ -510,8 +524,8 @@ body::before {
       <span class="pin-dot" id="pd1"></span>
       <span class="pin-dot" id="pd2"></span>
       <span class="pin-dot" id="pd3"></span>
-      <span class="pin-dot" id="pd4"></span>
-      <span class="pin-dot" id="pd5"></span>
+      
+      
     </div>
     <div class="pin-error" id="pin-error">Невірний PIN</div>
 
@@ -761,8 +775,8 @@ async function repairGist() {
 // ============================================================
 async function runSetup() {
   const pin = q('s-pin').value.trim();
-  if (!pin || pin.length < 4 || !/^\d+$/.test(pin)) {
-    toast('PIN — від 4 до 6 цифр', 'err'); return;
+  if (!pin || pin.length !== 4 || !/^\d+$/.test(pin)) {
+    toast('PIN — рівно 4 цифри', 'err'); return;
   }
   // PIN хеш зберігаємо в Gist щоб синхронізувати між пристроями
   // Але в цій версії конфіг вшитий — просто показуємо новий хеш
@@ -777,7 +791,7 @@ async function runSetup() {
 let _pin = '';
 
 function pinPress(digit) {
-  if (_pin.length >= 6) return;
+  if (_pin.length >= 4) return;
   _pin += digit;
   updatePinDisplay();
   if (_pin.length >= 4) {
@@ -799,7 +813,7 @@ function pinClear() {
 }
 
 function updatePinDisplay() {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 4; i++) {
     const dot = q('pd' + i);
     if (!dot) continue;
     dot.classList.toggle('filled', i < _pin.length);
@@ -1085,6 +1099,7 @@ function renderDetail(id) {
       '<div class="detail-actions">' +
         '<button class="btn btn-primary btn-sm" onclick="openUpdateModal()">↑ Оновити</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="showQR(\''+id+'\')">QR</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="renameDisk(\''+id+'\')">✎ Перейменувати</button>' +
         '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\''+id+'\')">Видалити</button>' +
       '</div>' +
     '</div>' +
@@ -1105,7 +1120,7 @@ function renderDetail(id) {
     '<div class="notes-card">' +
       '<div class="notes-header"><div class="notes-title">Нотатки команди</div>' +
       '<div style="font-size:10px;color:var(--text3)">'+(d.notes||[]).length+' записів</div></div>' +
-      '<div class="notes-list" id="notes-list">'+renderNotes(d.notes||[])+'</div>' +
+      '<div class="notes-list" id="notes-list">'+renderNotes(d.notes||[], id)+'</div>' +
       '<div class="notes-add">' +
         '<div style="flex:1">' +
           '<input id="note-author" type="text" placeholder="Ім\'я (необов\'язково)" style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:7px 12px;font-family:var(--mono);font-size:11px;border-radius:var(--r);outline:none;margin-bottom:6px;" onfocus="this.style.borderColor=\'var(--accent)\'" onblur="this.style.borderColor=\'var(--border)\'">' +
@@ -1210,14 +1225,19 @@ function toggleTree(uid, row) {
 // ============================================================
 // NOTES
 // ============================================================
-function renderNotes(notes) {
+function renderNotes(notes, diskId) {
   if (!notes.length) return '<div class="note-empty">Поки немає нотаток</div>';
-  return [...notes].reverse().map(n =>
-    '<div class="note-item">' +
-      '<div class="note-meta"><span class="note-author">'+esc(n.author)+'</span><span class="note-date">'+fmtAgo(n.date)+'</span></div>' +
+  return [...notes].reverse().map((n, ri) => {
+    const realIdx = notes.length - 1 - ri; // реальний індекс в масиві
+    return '<div class="note-item">' +
+      '<div class="note-meta">' +
+        '<span class="note-author">'+esc(n.author)+'</span>' +
+        '<span class="note-date">'+fmtAgo(n.date)+'</span>' +
+        (diskId ? '<button class="note-delete-btn" onclick="deleteNote(\''+diskId+'\','+realIdx+')" title="Видалити нотатку">✕</button>' : '') +
+      '</div>' +
       '<div class="note-text">'+esc(n.text)+'</div>' +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
 }
 
 async function addNote(diskId) {
@@ -1234,7 +1254,7 @@ async function addNote(diskId) {
   if (authorInput) authorInput.value = '';
   try {
     await saveDiskData(diskId);
-    q('notes-list').innerHTML = renderNotes(disk.notes);
+    q('notes-list').innerHTML = renderNotes(disk.notes, diskId);
     toast('Нотатку додано', 'ok');
   } catch(e) { toast('Помилка збереження', 'err'); }
 }
@@ -1258,7 +1278,8 @@ function onSearch(val) {
   if (!results.length) {
     dd.innerHTML = '<div class="search-empty">Нічого не знайдено</div>';
   } else {
-    dd.innerHTML = results.slice(0,12).map(r => {
+    const show = 8;
+    const renderResults = (items) => items.map(r => {
       const pathJson = r.pathArr ? encodeURIComponent(JSON.stringify(r.pathArr)) : '';
       return '<div class="search-result-item" onclick="closeSearch();navigateToPath(\''+r.diskId+'\',\''+pathJson+'\')">' +
         '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
@@ -1266,6 +1287,11 @@ function onSearch(val) {
         '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' файлів':'')+'</div>' +
       '</div>';
     }).join('');
+    let html = renderResults(results.slice(0, show));
+    if (results.length > show) {
+      html += '<div class="search-more" onclick="expandSearchResults(this)" data-all="'+encodeURIComponent(JSON.stringify(results.map(r=>({...r,val}))))+'">Показати ще '+(results.length - show)+' результатів ↓</div>';
+    }
+    dd.innerHTML = html;
   }
   dd.classList.add('open');
 }
@@ -1288,6 +1314,20 @@ function highlightMatch(text, query) {
 }
 
 function closeSearch() { q('search-dropdown').classList.remove('open'); }
+
+function expandSearchResults(btn) {
+  const all = JSON.parse(decodeURIComponent(btn.dataset.all));
+  const val = all[0]?.val || '';
+  const html = all.map(r => {
+    const pathJson = r.pathArr ? encodeURIComponent(JSON.stringify(r.pathArr)) : '';
+    return '<div class="search-result-item" onclick="closeSearch();navigateToPath(\''+r.diskId+'\',\''+pathJson+'\')">' +
+      '<div class="sri-disk">💾 '+esc(r.diskName)+'</div>' +
+      '<div class="sri-path">'+highlightMatch(r.path, val)+'</div>' +
+      '<div class="sri-size">'+fmtGB(r.size)+(r.files?' · '+r.files.toLocaleString()+' файлів':'')+'</div>' +
+    '</div>';
+  }).join('');
+  btn.parentNode.innerHTML = html;
+}
 
 async function navigateToPath(diskId, pathJson) {
   // якщо немає шляху — просто відкриваємо диск
@@ -1388,6 +1428,38 @@ async function confirmDelete(id) {
     await saveIndex();
     toast('Видалено', 'ok');
     showList();
+  } catch(e) { toast('Помилка', 'err'); }
+}
+
+async function renameDisk(id) {
+  const entry = S.index[id];
+  if (!entry) return;
+  const newName = prompt('Перейменувати диск:\n\nПоточна назва: "' + entry.name + '"\n\nНова назва:', entry.name);
+  if (!newName || newName.trim() === entry.name) return;
+  const confirmed = confirm('Перейменувати "' + entry.name + '" → "' + newName.trim() + '"?');
+  if (!confirmed) return;
+  entry.name = newName.trim();
+  if (S.disks[id]) S.disks[id].name = newName.trim();
+  try {
+    await saveIndex();
+    if (S.disks[id]) await saveDiskData(id);
+    toast('Перейменовано', 'ok');
+    renderDetail(id);
+    updateSidebar();
+  } catch(e) { toast('Помилка: ' + e.message, 'err'); }
+}
+
+async function deleteNote(diskId, noteIdx) {
+  const disk = S.disks[diskId];
+  if (!disk || !disk.notes) return;
+  const note = disk.notes[noteIdx];
+  if (!note) return;
+  if (!confirm('Видалити нотатку від ' + note.author + '?\n\n"' + note.text.slice(0, 80) + (note.text.length > 80 ? '…' : '') + '"')) return;
+  disk.notes.splice(noteIdx, 1);
+  try {
+    await saveDiskData(diskId);
+    q('notes-list').innerHTML = renderNotes(disk.notes, diskId);
+    toast('Нотатку видалено', 'ok');
   } catch(e) { toast('Помилка', 'err'); }
 }
 
