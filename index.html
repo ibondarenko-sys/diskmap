@@ -569,33 +569,40 @@ body::before {
   display: flex; align-items: center; gap: 4px;
 }
 
-/* SMART toggle */
-.smart-toggle {
+/* Health card — мінімальний індикатор */
+.health-card {
   display: flex; align-items: center; gap: 8px;
-  margin-top: 12px; cursor: pointer; user-select: none;
+  padding: 8px 18px; margin-bottom: 16px;
+  border-left: 3px solid var(--border2);
+  font-size: 11px; color: var(--text3);
 }
-.smart-toggle input { cursor: pointer; accent-color: var(--accent); }
-.smart-toggle-text { font-size: 11px; color: var(--text3); }
-.smart-toggle-hint { color: var(--text3); opacity: 0.6; }
-.smart-fields {
-  display: none; margin-top: 12px;
-  padding: 12px; background: var(--bg2);
-  border: 1px solid var(--border); border-radius: var(--r);
-}
-.smart-fields.show { display: block; }
-.smart-field-row { display: flex; gap: 10px; }
+.health-card.ok { border-left-color: var(--green); }
+.health-card.warning { border-left-color: var(--yellow); }
+.health-card.critical { border-left-color: var(--red); }
+.health-icon { font-size: 14px; }
+.health-main { flex: 1; }
+.health-label { color: var(--text2); }
+.health-meta { font-size: 10px; margin-top: 1px; }
+.health-updated { font-size: 10px; color: var(--text3); }
 
-/* SMART card */
-.smart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 18px; margin-bottom: 20px; }
-.smart-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.smart-icon { font-size: 16px; }
-.smart-label { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; }
-.smart-updated { font-size: 10px; color: var(--text3); }
-.smart-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-.smart-stat { background: var(--surface2); border-radius: 4px; padding: 8px 10px; }
-.smart-stat-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.smart-stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
-.smart-issues { margin-top: 10px; font-size: 11px; color: var(--yellow); padding: 6px 10px; background: var(--yellow-dim); border-radius: 4px; }
+/* Health modal */
+.health-btn-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.health-btn {
+  border: 1px solid var(--border); border-radius: var(--r);
+  padding: 14px 8px; text-align: center; cursor: pointer;
+  transition: all 0.15s; background: var(--bg2);
+}
+.health-btn:hover { border-color: var(--border2); }
+.health-btn.active { border-color: var(--accent); background: var(--accent-dim); }
+.health-btn-icon { font-size: 22px; margin-bottom: 6px; }
+.health-btn-label { font-size: 11px; color: var(--text2); }
+
+/* Terminal block */
+.terminal-block {
+  background: #000; border-radius: var(--r); padding: 14px 16px;
+  font-family: var(--mono); font-size: 11px; color: #00ff88;
+  line-height: 1.7; word-break: break-all; margin-top: 4px;
+}
 
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
@@ -720,6 +727,55 @@ body::before {
   </div>
 </div>
 
+<!-- ===== MODAL: HEALTH STATUS ===== -->
+<div class="overlay" id="modal-health">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-health')">✕</button>
+    <h3>Статус диску</h3>
+    <div class="modal-sub">Встанови вручну після огляду</div>
+    <div class="health-btn-grid">
+      <div class="health-btn" data-status="ok" onclick="selectHealth(this)">
+        <div class="health-btn-icon">💚</div>
+        <div class="health-btn-label">Добре</div>
+      </div>
+      <div class="health-btn" data-status="warning" onclick="selectHealth(this)">
+        <div class="health-btn-icon">⚠️</div>
+        <div class="health-btn-label">Стежити</div>
+      </div>
+      <div class="health-btn" data-status="critical" onclick="selectHealth(this)">
+        <div class="health-btn-icon">❌</div>
+        <div class="health-btn-label">Проблема</div>
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>Коментар <span style="color:var(--text3);font-weight:400">(необов'язково)</span></label>
+      <input type="text" id="health-comment" placeholder="Наприклад: клацає при старті">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveHealth()">Зберегти</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-health')">Скасувати</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: TERMINAL HINT ===== -->
+<div class="overlay" id="modal-terminal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-terminal')">✕</button>
+    <h3>Сканування здоров'я</h3>
+    <div class="modal-sub">Скопіюй і встав в Terminal на Mac</div>
+    <div class="terminal-block" id="terminal-cmd"></div>
+    <div style="margin-top:12px;font-size:11px;color:var(--text3);line-height:1.6">
+      Не потребує встановлення — скрипт завантажується автоматично.<br>
+      Потрібен Python 3 (є на будь-якому Mac за замовчуванням).
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="copyTerminalCmd()">Скопіювати команду</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-terminal')">Закрити</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- #app -->
 
 <!-- ===== MODAL: ADD DISK ===== -->
@@ -784,30 +840,6 @@ body::before {
       <div class="drop-hint">File System Access API · тільки читання · файли не завантажуються</div>
     </div>
     <div class="scan-log" id="scan-log"></div>
-    <label class="smart-toggle">
-      <input type="checkbox" id="smart-checkbox">
-      <span class="smart-toggle-text">Додати SMART дані <span class="smart-toggle-hint">(потрібен smartmontools)</span></span>
-    </label>
-    <div class="smart-fields" id="smart-fields">
-      <div class="smart-field-row">
-        <div class="field" style="flex:1;margin-bottom:8px">
-          <label>Шлях до smartctl</label>
-          <input type="text" id="smart-path" placeholder="/usr/local/bin/smartctl" value="/usr/local/bin/smartctl">
-          <div class="field-hint">Mac: /usr/local/bin/smartctl · Win: C:\Program Files\smartmontools\bin\smartctl.exe</div>
-        </div>
-      </div>
-      <div class="smart-field-row">
-        <div class="field" style="flex:1;margin-bottom:0">
-          <label>Шлях до диску</label>
-          <input type="text" id="smart-device" placeholder="/dev/disk2 або \\.\PhysicalDrive1">
-          <div class="field-hint">Mac: /dev/disk2 · Win: \\.\PhysicalDrive1</div>
-        </div>
-      </div>
-      <div style="margin-top:10px;font-size:10px;color:var(--text3);line-height:1.6">
-        💡 Встановити: <code style="color:var(--accent)">brew install smartmontools</code> (Mac) або <a href="https://www.smartmontools.org/wiki/Download" target="_blank" style="color:var(--accent)">smartmontools.org</a> (Win)<br>
-        Знайти диск: <code style="color:var(--accent)">diskutil list</code> (Mac) · <code style="color:var(--accent)">wmic diskdrive list brief</code> (Win)
-      </div>
-    </div>
   </div>
 </div>
 
@@ -1317,6 +1349,8 @@ function renderDetail(id) {
         '<div class="more-menu-wrap">' +
           '<button class="btn btn-ghost btn-sm" onclick="toggleMoreMenu(\'more_'+id+'\')" title="Більше">•••</button>' +
           '<div class="more-menu" id="more_'+id+'">' +
+            '<div class="more-menu-item" onclick="closeMoreMenu();showHealthModal(\''+id+'\')">💚 Статус здоров\'я</div>' +
+            '<div class="more-menu-item" onclick="closeMoreMenu();showTerminalModal(\''+id+'\')">⌨ Сканувати (Terminal)</div>' +
             '<div class="more-menu-item" onclick="closeMoreMenu();renameDisk(\''+id+'\')">✎ Перейменувати</div>' +
             '<div class="more-menu-item danger" onclick="closeMoreMenu();confirmDelete(\''+id+'\')">✕ Видалити диск</div>' +
           '</div>' +
@@ -1332,7 +1366,7 @@ function renderDetail(id) {
       '<div class="usage-top"><span>Заповненість</span><span>'+pct+'%</span></div>' +
       '<div class="usage-bar"><div class="usage-bar-fill '+fillCls+'" style="width:'+pct+'%"></div></div>' +
     '</div>' +
-    (d.smart ? renderSmart(d.smart) : '') +
+    (S.index[id]?.health ? renderHealth(S.index[id].health) : '') +
     '<div class="tree-card">' +
       '<div class="tree-header"><div class="tree-title">Структура папок</div>' +
       '<div style="font-size:10px;color:var(--text3)">'+(d.tree||[]).length+' папок у корені</div></div>' +
@@ -1733,13 +1767,6 @@ async function deleteNote(diskId, noteIdx) {
 // ============================================================
 function openUpdateModal() {
   openModal('modal-update');
-  // показуємо/ховаємо SMART поля при зміні чекбоксу
-  const cb = q('smart-checkbox');
-  if (cb) {
-    cb.onchange = () => {
-      q('smart-fields').classList.toggle('show', cb.checked);
-    };
-  }
 }
 
 async function pickFolder() {
@@ -1761,24 +1788,10 @@ async function pickFolder() {
     d.free = Math.max((d.capacity||0) - usedGB, 0);
     d.updatedAt = new Date().toISOString();
 
-    // SMART — якщо увімкнено
-    const smartEnabled = q('smart-checkbox')?.checked;
-    if (smartEnabled) {
-      const smartPath = q('smart-path')?.value.trim() || '/usr/local/bin/smartctl';
-      const smartDevice = q('smart-device')?.value.trim();
-      if (smartDevice) {
-        logLine('⟳ Отримуємо SMART дані...');
-        d.smart = await fetchSmartData(smartPath, smartDevice, logLine);
-      } else {
-        logLine('⚠ SMART: не вказано шлях до диску — пропускаємо');
-      }
-    }
-
     if (S.index[S.currentDisk]) {
       S.index[S.currentDisk].used = d.used;
       S.index[S.currentDisk].free = d.free;
       S.index[S.currentDisk].updatedAt = d.updatedAt;
-      if (d.smart) S.index[S.currentDisk].smart = d.smart;
     }
     const sizeKB = Math.round(JSON.stringify(d).length / 1024);
     logLine('Розмір даних: ' + sizeKB + ' KB');
@@ -1796,105 +1809,79 @@ async function pickFolder() {
   }
 }
 
+function renderHealth(health) {
+  if (!health) return '';
+  const statusClass = health.status || 'ok';
+  const comment = health.comment ? ' · ' + esc(health.comment) : '';
+  return '<div class="health-card ' + statusClass + '">' +
+    '<div class="health-icon">' + (health.icon || '⚪') + '</div>' +
+    '<div class="health-main">' +
+      '<span class="health-label">' + esc(health.label || 'Статус невідомий') + '</span>' +
+      '<span class="health-meta">' + comment + '</span>' +
+    '</div>' +
+    '<div class="health-updated">' + fmtAgo(health.updatedAt) + '</div>' +
+  '</div>';
+}
+
+let _healthDiskId = null;
+
+function showHealthModal(id) {
+  _healthDiskId = id;
+  const current = S.index[id]?.health;
+  document.querySelectorAll('.health-btn').forEach(b => b.classList.remove('active'));
+  if (current) {
+    const btn = document.querySelector('.health-btn[data-status="'+current.status+'"]');
+    if (btn) btn.classList.add('active');
+    q('health-comment').value = current.comment || '';
+  } else {
+    q('health-comment').value = '';
+  }
+  openModal('modal-health');
+}
+
+function selectHealth(btn) {
+  document.querySelectorAll('.health-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function saveHealth() {
+  const id = _healthDiskId;
+  if (!id) return;
+  const activeBtn = document.querySelector('.health-btn.active');
+  if (!activeBtn) { toast('Вибери статус', 'err'); return; }
+  const status = activeBtn.dataset.status;
+  const icons = { ok: '💚', warning: '⚠️', critical: '❌' };
+  const labels = { ok: 'Добре', warning: 'Стежити', critical: 'Проблема' };
+  const comment = q('health-comment').value.trim();
+  const health = { status, icon: icons[status], label: labels[status], comment: comment || null, updatedAt: new Date().toISOString() };
+  S.index[id].health = health;
+  try {
+    await saveIndex(true);
+    closeModal('modal-health');
+    toast('Статус збережено', 'ok');
+    if (S.currentDisk === id) renderDetail(id);
+    renderList();
+  } catch(e) { toast('Помилка', 'err'); }
+}
+
+function showTerminalModal(id) {
+  const cmd = 'python3 <(curl -s https://raw.githubusercontent.com/ibondarenko-sys/diskmap/main/diskmap_health.py)';
+  q('terminal-cmd').textContent = cmd;
+  q('terminal-cmd').dataset.cmd = cmd;
+  openModal('modal-terminal');
+}
+
+function copyTerminalCmd() {
+  const cmd = q('terminal-cmd').dataset.cmd || q('terminal-cmd').textContent;
+  navigator.clipboard.writeText(cmd).then(() => {
+    toast('Скопійовано! Відкрий Terminal і встав', 'ok');
+    closeModal('modal-terminal');
+  }).catch(() => toast('Виділи текст і скопіюй вручну', ''));
+}
+
 function stripItems(tree) {
   if (!tree) return;
   tree.forEach(node => { delete node.items; delete node.exts; if (node.children) stripItems(node.children); });
-}
-
-// SMART — читаємо через локальний HTTP сервер (smartctl-bridge)
-// Оскільки браузер не може запускати процеси, SMART вводиться вручну
-async function fetchSmartData(smartPath, device, logFn) {
-  // Браузер не може запускати smartctl напряму.
-  // Показуємо інструкцію і форму для ручного введення результату.
-  return new Promise((resolve) => {
-    logFn('ℹ Запусти в терміналі:');
-    logFn('  ' + smartPath + ' -H -A ' + device + ' -j');
-    logFn('  і встав результат у поле нижче');
-
-    // показуємо textarea для вставки JSON виводу smartctl
-    const log = q('scan-log');
-    log.innerHTML += '\n<textarea id="smart-json-input" style="width:100%;height:80px;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;font-family:var(--mono);font-size:10px;border-radius:4px;resize:none" placeholder="Встав сюди вивід smartctl -j..."></textarea>';
-    log.innerHTML += '\n<button onclick="submitSmartData()" style="margin-top:6px;padding:5px 12px;background:var(--accent);color:#000;border:none;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer">Застосувати SMART →</button>';
-    log.scrollTop = log.scrollHeight;
-
-    // зберігаємо resolve щоб submitSmartData міг його викликати
-    window._smartResolve = resolve;
-  });
-}
-
-function submitSmartData() {
-  const input = q('smart-json-input');
-  if (!input || !window._smartResolve) return;
-  try {
-    const raw = JSON.parse(input.value.trim());
-    const smart = parseSmart(raw);
-    window._smartResolve(smart);
-    window._smartResolve = null;
-    // прибираємо поле
-    input.remove();
-    document.querySelector('[onclick="submitSmartData()"]')?.remove();
-    q('scan-log').innerHTML += '\n✅ SMART дані отримано';
-  } catch(e) {
-    toast('Невалідний JSON від smartctl', 'err');
-  }
-}
-
-function parseSmart(raw) {
-  try {
-    const health = raw.smart_status?.passed;
-    const temp = raw.temperature?.current;
-    const hours = raw.power_on_time?.hours;
-    const attrs = raw.ata_smart_attributes?.table || [];
-
-    // шукаємо критичні атрибути
-    const reallocated = attrs.find(a => a.id === 5)?.raw?.value || 0;
-    const pending = attrs.find(a => a.id === 197)?.raw?.value || 0;
-    const uncorrectable = attrs.find(a => a.id === 198)?.raw?.value || 0;
-
-    let status = 'ok';
-    if (!health) status = 'critical';
-    else if (reallocated > 0 || pending > 0 || uncorrectable > 0) status = 'warning';
-    else if (temp && temp > 50) status = 'warning';
-
-    return {
-      status,
-      health: health ? 'PASSED' : 'FAILED',
-      temp: temp || null,
-      hours: hours || null,
-      reallocated,
-      pending,
-      uncorrectable,
-      updatedAt: new Date().toISOString()
-    };
-  } catch(e) { return null; }
-}
-
-function renderSmart(smart) {
-  if (!smart) return '';
-  const icons = { ok: '💚', warning: '⚠️', critical: '❌' };
-  const labels = { ok: 'Здоровий', warning: 'Увага', critical: 'Критичний' };
-  const icon = icons[smart.status] || '❓';
-  const label = labels[smart.status] || 'Невідомо';
-  const temp = smart.temp ? smart.temp + '°C' : '—';
-  const hours = smart.hours ? Math.round(smart.hours/24) + ' дн' : '—';
-  const issues = [];
-  if (smart.reallocated > 0) issues.push('переміщених секторів: '+smart.reallocated);
-  if (smart.pending > 0) issues.push('очікуючих: '+smart.pending);
-  if (smart.uncorrectable > 0) issues.push('некоректованих: '+smart.uncorrectable);
-
-  return '<div class="smart-card">' +
-    '<div class="smart-header">' +
-      '<span class="smart-icon">'+icon+'</span>' +
-      '<span class="smart-label">SMART · '+label+'</span>' +
-      '<span class="smart-updated">'+fmtAgo(smart.updatedAt)+'</span>' +
-    '</div>' +
-    '<div class="smart-stats">' +
-      '<div class="smart-stat"><div class="smart-stat-label">Температура</div><div class="smart-stat-val">'+temp+'</div></div>' +
-      '<div class="smart-stat"><div class="smart-stat-label">Напрацювання</div><div class="smart-stat-val">'+hours+'</div></div>' +
-      '<div class="smart-stat"><div class="smart-stat-label">Статус</div><div class="smart-stat-val">'+smart.health+'</div></div>' +
-    '</div>' +
-    (issues.length ? '<div class="smart-issues">⚠ '+issues.join(' · ')+'</div>' : '') +
-  '</div>';
 }
 
 async function scanDir(handle, depth, logFn) {
