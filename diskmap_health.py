@@ -82,7 +82,11 @@ def get_disk_list():
 def fetch_index():
     """Завантажує індекс дисків з Worker"""
     try:
-        with urllib.request.urlopen(WORKER_URL + "/index") as r:
+        req = urllib.request.Request(
+            WORKER_URL + "/index",
+            headers={"User-Agent": "DiskMap-Health-Scanner/1.0", "Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req) as r:
             return json.loads(r.read())
     except Exception as e:
         print(f"✗ Помилка завантаження індексу: {e}")
@@ -94,7 +98,7 @@ def patch_index(data):
         req = urllib.request.Request(
             WORKER_URL + "/index",
             data=json.dumps(data).encode(),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": "DiskMap-Health-Scanner/1.0"},
             method="PATCH"
         )
         with urllib.request.urlopen(req) as r:
@@ -106,14 +110,16 @@ def patch_index(data):
 def smart_status_to_health(smart_str):
     """Конвертує SMART статус macOS в наш формат"""
     s = smart_str.lower()
-    if "verified" in s or "passed" in s or "ok" in s:
-        return {"status": "ok", "label": "Verified", "icon": "💚"}
-    elif "failing" in s or "failed" in s or "fail" in s:
-        return {"status": "critical", "label": "Failing", "icon": "❌"}
+    if "verified" in s or "passed" in s:
+        return {"status": "ok", "label": "Verified ✓", "icon": "💚"}
+    elif "failing" in s or "failed" in s:
+        return {"status": "critical", "label": "Failing ✗", "icon": "❌"}
     elif "caution" in s or "warning" in s:
         return {"status": "warning", "label": "Caution", "icon": "⚠️"}
+    elif "not supported" in s or "not available" in s:
+        return {"status": "unknown", "label": "USB (SMART н/д)", "icon": "⚪"}
     else:
-        return {"status": "unknown", "label": smart_str or "Not Supported", "icon": "⚪"}
+        return {"status": "unknown", "label": smart_str or "Невідомо", "icon": "⚪"}
 
 def format_size(bytes_val):
     gb = bytes_val / 1024 / 1024 / 1024
@@ -247,3 +253,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\nПерервано")
         sys.exit(0)
+# Кінець файлу
