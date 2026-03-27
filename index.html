@@ -1532,6 +1532,22 @@ function renderSearchRow(r, val, type) {
   '</div>';
 }
 
+function searchTree(nodes, query, disk, pathArr, results) {
+  if (!nodes) return;
+  nodes.forEach(node => {
+    const nodePath = [...pathArr, node.name];
+    if (node.name.toLowerCase().includes(query)) {
+      results.push({ diskId:disk.id, diskName:disk.name, path:nodePath.join(' / '), pathArr:nodePath, size:node.size, files:node.files });
+    }
+    if (node.children) searchTree(node.children, query, disk, nodePath, results);
+  });
+}
+
+function highlightMatch(text, query) {
+  const re = new RegExp('('+query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')', 'gi');
+  return esc(text).replace(re, '<mark>$1</mark>');
+}
+
 let _navigating = false;
 
 function handleSearchClick(el, diskId, pathJson) {
