@@ -569,6 +569,34 @@ body::before {
   display: flex; align-items: center; gap: 4px;
 }
 
+/* SMART toggle */
+.smart-toggle {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px; cursor: pointer; user-select: none;
+}
+.smart-toggle input { cursor: pointer; accent-color: var(--accent); }
+.smart-toggle-text { font-size: 11px; color: var(--text3); }
+.smart-toggle-hint { color: var(--text3); opacity: 0.6; }
+.smart-fields {
+  display: none; margin-top: 12px;
+  padding: 12px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--r);
+}
+.smart-fields.show { display: block; }
+.smart-field-row { display: flex; gap: 10px; }
+
+/* SMART card */
+.smart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 18px; margin-bottom: 20px; }
+.smart-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.smart-icon { font-size: 16px; }
+.smart-label { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; }
+.smart-updated { font-size: 10px; color: var(--text3); }
+.smart-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.smart-stat { background: var(--surface2); border-radius: 4px; padding: 8px 10px; }
+.smart-stat-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.smart-stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
+.smart-issues { margin-top: 10px; font-size: 11px; color: var(--yellow); padding: 6px 10px; background: var(--yellow-dim); border-radius: 4px; }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -756,6 +784,30 @@ body::before {
       <div class="drop-hint">File System Access API · тільки читання · файли не завантажуються</div>
     </div>
     <div class="scan-log" id="scan-log"></div>
+    <label class="smart-toggle">
+      <input type="checkbox" id="smart-checkbox">
+      <span class="smart-toggle-text">Додати SMART дані <span class="smart-toggle-hint">(потрібен smartmontools)</span></span>
+    </label>
+    <div class="smart-fields" id="smart-fields">
+      <div class="smart-field-row">
+        <div class="field" style="flex:1;margin-bottom:8px">
+          <label>Шлях до smartctl</label>
+          <input type="text" id="smart-path" placeholder="/usr/local/bin/smartctl" value="/usr/local/bin/smartctl">
+          <div class="field-hint">Mac: /usr/local/bin/smartctl · Win: C:\Program Files\smartmontools\bin\smartctl.exe</div>
+        </div>
+      </div>
+      <div class="smart-field-row">
+        <div class="field" style="flex:1;margin-bottom:0">
+          <label>Шлях до диску</label>
+          <input type="text" id="smart-device" placeholder="/dev/disk2 або \\.\PhysicalDrive1">
+          <div class="field-hint">Mac: /dev/disk2 · Win: \\.\PhysicalDrive1</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:10px;color:var(--text3);line-height:1.6">
+        💡 Встановити: <code style="color:var(--accent)">brew install smartmontools</code> (Mac) або <a href="https://www.smartmontools.org/wiki/Download" target="_blank" style="color:var(--accent)">smartmontools.org</a> (Win)<br>
+        Знайти диск: <code style="color:var(--accent)">diskutil list</code> (Mac) · <code style="color:var(--accent)">wmic diskdrive list brief</code> (Win)
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1280,6 +1332,7 @@ function renderDetail(id) {
       '<div class="usage-top"><span>Заповненість</span><span>'+pct+'%</span></div>' +
       '<div class="usage-bar"><div class="usage-bar-fill '+fillCls+'" style="width:'+pct+'%"></div></div>' +
     '</div>' +
+    (d.smart ? renderSmart(d.smart) : '') +
     '<div class="tree-card">' +
       '<div class="tree-header"><div class="tree-title">Структура папок</div>' +
       '<div style="font-size:10px;color:var(--text3)">'+(d.tree||[]).length+' папок у корені</div></div>' +
@@ -1678,7 +1731,16 @@ async function deleteNote(diskId, noteIdx) {
 // ============================================================
 // UPDATE (File System Access)
 // ============================================================
-function openUpdateModal() { openModal('modal-update'); }
+function openUpdateModal() {
+  openModal('modal-update');
+  // показуємо/ховаємо SMART поля при зміні чекбоксу
+  const cb = q('smart-checkbox');
+  if (cb) {
+    cb.onchange = () => {
+      q('smart-fields').classList.toggle('show', cb.checked);
+    };
+  }
+}
 
 async function pickFolder() {
   if (!window.showDirectoryPicker) { toast('Потрібен Chrome або Edge', 'err'); return; }
@@ -1698,11 +1760,25 @@ async function pickFolder() {
     d.used = usedGB;
     d.free = Math.max((d.capacity||0) - usedGB, 0);
     d.updatedAt = new Date().toISOString();
-    // оновлюємо індекс
+
+    // SMART — якщо увімкнено
+    const smartEnabled = q('smart-checkbox')?.checked;
+    if (smartEnabled) {
+      const smartPath = q('smart-path')?.value.trim() || '/usr/local/bin/smartctl';
+      const smartDevice = q('smart-device')?.value.trim();
+      if (smartDevice) {
+        logLine('⟳ Отримуємо SMART дані...');
+        d.smart = await fetchSmartData(smartPath, smartDevice, logLine);
+      } else {
+        logLine('⚠ SMART: не вказано шлях до диску — пропускаємо');
+      }
+    }
+
     if (S.index[S.currentDisk]) {
       S.index[S.currentDisk].used = d.used;
       S.index[S.currentDisk].free = d.free;
       S.index[S.currentDisk].updatedAt = d.updatedAt;
+      if (d.smart) S.index[S.currentDisk].smart = d.smart;
     }
     const sizeKB = Math.round(JSON.stringify(d).length / 1024);
     logLine('Розмір даних: ' + sizeKB + ' KB');
@@ -1723,6 +1799,102 @@ async function pickFolder() {
 function stripItems(tree) {
   if (!tree) return;
   tree.forEach(node => { delete node.items; delete node.exts; if (node.children) stripItems(node.children); });
+}
+
+// SMART — читаємо через локальний HTTP сервер (smartctl-bridge)
+// Оскільки браузер не може запускати процеси, SMART вводиться вручну
+async function fetchSmartData(smartPath, device, logFn) {
+  // Браузер не може запускати smartctl напряму.
+  // Показуємо інструкцію і форму для ручного введення результату.
+  return new Promise((resolve) => {
+    logFn('ℹ Запусти в терміналі:');
+    logFn('  ' + smartPath + ' -H -A ' + device + ' -j');
+    logFn('  і встав результат у поле нижче');
+
+    // показуємо textarea для вставки JSON виводу smartctl
+    const log = q('scan-log');
+    log.innerHTML += '\n<textarea id="smart-json-input" style="width:100%;height:80px;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;font-family:var(--mono);font-size:10px;border-radius:4px;resize:none" placeholder="Встав сюди вивід smartctl -j..."></textarea>';
+    log.innerHTML += '\n<button onclick="submitSmartData()" style="margin-top:6px;padding:5px 12px;background:var(--accent);color:#000;border:none;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer">Застосувати SMART →</button>';
+    log.scrollTop = log.scrollHeight;
+
+    // зберігаємо resolve щоб submitSmartData міг його викликати
+    window._smartResolve = resolve;
+  });
+}
+
+function submitSmartData() {
+  const input = q('smart-json-input');
+  if (!input || !window._smartResolve) return;
+  try {
+    const raw = JSON.parse(input.value.trim());
+    const smart = parseSmart(raw);
+    window._smartResolve(smart);
+    window._smartResolve = null;
+    // прибираємо поле
+    input.remove();
+    document.querySelector('[onclick="submitSmartData()"]')?.remove();
+    q('scan-log').innerHTML += '\n✅ SMART дані отримано';
+  } catch(e) {
+    toast('Невалідний JSON від smartctl', 'err');
+  }
+}
+
+function parseSmart(raw) {
+  try {
+    const health = raw.smart_status?.passed;
+    const temp = raw.temperature?.current;
+    const hours = raw.power_on_time?.hours;
+    const attrs = raw.ata_smart_attributes?.table || [];
+
+    // шукаємо критичні атрибути
+    const reallocated = attrs.find(a => a.id === 5)?.raw?.value || 0;
+    const pending = attrs.find(a => a.id === 197)?.raw?.value || 0;
+    const uncorrectable = attrs.find(a => a.id === 198)?.raw?.value || 0;
+
+    let status = 'ok';
+    if (!health) status = 'critical';
+    else if (reallocated > 0 || pending > 0 || uncorrectable > 0) status = 'warning';
+    else if (temp && temp > 50) status = 'warning';
+
+    return {
+      status,
+      health: health ? 'PASSED' : 'FAILED',
+      temp: temp || null,
+      hours: hours || null,
+      reallocated,
+      pending,
+      uncorrectable,
+      updatedAt: new Date().toISOString()
+    };
+  } catch(e) { return null; }
+}
+
+function renderSmart(smart) {
+  if (!smart) return '';
+  const icons = { ok: '💚', warning: '⚠️', critical: '❌' };
+  const labels = { ok: 'Здоровий', warning: 'Увага', critical: 'Критичний' };
+  const icon = icons[smart.status] || '❓';
+  const label = labels[smart.status] || 'Невідомо';
+  const temp = smart.temp ? smart.temp + '°C' : '—';
+  const hours = smart.hours ? Math.round(smart.hours/24) + ' дн' : '—';
+  const issues = [];
+  if (smart.reallocated > 0) issues.push('переміщених секторів: '+smart.reallocated);
+  if (smart.pending > 0) issues.push('очікуючих: '+smart.pending);
+  if (smart.uncorrectable > 0) issues.push('некоректованих: '+smart.uncorrectable);
+
+  return '<div class="smart-card">' +
+    '<div class="smart-header">' +
+      '<span class="smart-icon">'+icon+'</span>' +
+      '<span class="smart-label">SMART · '+label+'</span>' +
+      '<span class="smart-updated">'+fmtAgo(smart.updatedAt)+'</span>' +
+    '</div>' +
+    '<div class="smart-stats">' +
+      '<div class="smart-stat"><div class="smart-stat-label">Температура</div><div class="smart-stat-val">'+temp+'</div></div>' +
+      '<div class="smart-stat"><div class="smart-stat-label">Напрацювання</div><div class="smart-stat-val">'+hours+'</div></div>' +
+      '<div class="smart-stat"><div class="smart-stat-label">Статус</div><div class="smart-stat-val">'+smart.health+'</div></div>' +
+    '</div>' +
+    (issues.length ? '<div class="smart-issues">⚠ '+issues.join(' · ')+'</div>' : '') +
+  '</div>';
 }
 
 async function scanDir(handle, depth, logFn) {
