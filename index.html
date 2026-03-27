@@ -1436,6 +1436,16 @@ async function addNote(diskId) {
 function showSearch() {
   q('search-page').classList.add('open');
   setTimeout(() => q('search-page-input')?.focus(), 100);
+
+  // завантажуємо всі незавантажені диски одразу
+  const toLoad = getDisks().filter(e => !S.disks[e.id] && e.gistId);
+  if (toLoad.length) {
+    Promise.all(toLoad.map(e => loadDiskData(e.id).catch(() => {}))).then(() => {
+      // якщо є текст в полі — оновлюємо результати
+      const val = q('search-page-input')?.value;
+      if (val && val.length >= 2) onSearchPage(val);
+    });
+  }
 }
 
 function closeSearch() {
@@ -1462,20 +1472,29 @@ function onSearchPage(val) {
     return;
   }
 
-  const q2 = val.toLowerCase();
+  const query = val.toLowerCase();
   const diskResults = [];
   const folderResults = [];
+  let notLoadedCount = 0;
 
   getDisks().forEach(entry => {
-    if (entry.name.toLowerCase().includes(q2)) {
+    if (entry.name.toLowerCase().includes(query)) {
       diskResults.push({ diskId:entry.id, diskName:entry.name, path:entry.name, pathArr:null, size:entry.used, files:null, isDisk:true });
     }
     const disk = S.disks[entry.id];
-    if (disk) searchTree(disk.tree||[], q2, entry, [], folderResults);
+    if (disk) {
+      searchTree(disk.tree||[], query, entry, [], folderResults);
+    } else {
+      notLoadedCount++;
+    }
   });
 
   if (!diskResults.length && !folderResults.length) {
-    body.innerHTML = '<div class="search-no-results">Нічого не знайдено по запиту «'+esc(val)+'»</div>';
+    let html = '<div class="search-no-results">Нічого не знайдено по запиту «'+esc(val)+'»</div>';
+    if (notLoadedCount > 0) {
+      html += '<div style="text-align:center;font-size:11px;color:var(--text3);padding:12px">⟳ '+notLoadedCount+' дисків ще завантажуються у фоні — спробуй ще раз через кілька секунд</div>';
+    }
+    body.innerHTML = html;
     return;
   }
 
@@ -1489,6 +1508,10 @@ function onSearchPage(val) {
   if (folderResults.length) {
     html += '<div class="search-section-title">Папки · '+folderResults.length+' результатів</div>';
     html += folderResults.map(r => renderSearchRow(r, val, 'folder')).join('');
+  }
+
+  if (notLoadedCount > 0) {
+    html += '<div style="text-align:center;font-size:11px;color:var(--text3);padding:12px;border-top:1px solid var(--border)">⟳ ще '+notLoadedCount+' дисків завантажуються...</div>';
   }
 
   body.innerHTML = html;
