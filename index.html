@@ -1621,9 +1621,9 @@ function onSearchPage(val) {
 
 function renderSearchRow(r, val, type) {
   const pathJson = r.pathArr ? encodeURIComponent(JSON.stringify(r.pathArr)) : '';
-  const icon = type === 'disk' ? '💾' : '📁';
-  const nameOnly = r.pathArr ? r.pathArr[r.pathArr.length - 1] : r.diskName;
-  const pathWithout = r.pathArr && r.pathArr.length > 1 ? r.pathArr.slice(0,-1).join(' / ') : '';
+  const icon = r.isFile ? '📄' : type === 'disk' ? '💾' : '📁';
+  const nameOnly = r.pathArr ? r.path.split(' / ').pop() : r.diskName;
+  const pathWithout = r.path.includes(' / ') ? r.path.split(' / ').slice(0,-1).join(' / ') : '';
   return '<div class="search-result-row" onclick="handleSearchClick(this,\''+r.diskId+'\',\''+pathJson+'\')">' +
     '<div class="srr-icon">'+icon+'</div>' +
     '<div class="srr-main">' +
@@ -1640,6 +1640,15 @@ function searchTree(nodes, query, disk, pathArr, results) {
     const nodePath = [...pathArr, node.name];
     if (node.name.toLowerCase().includes(query)) {
       results.push({ diskId:disk.id, diskName:disk.name, path:nodePath.join(' / '), pathArr:nodePath, size:node.size, files:node.files });
+    }
+    // шукаємо також по файлах всередині папки
+    if (node.items) {
+      node.items.forEach(file => {
+        if (file.name.toLowerCase().includes(query)) {
+          const filePath = [...nodePath, file.name];
+          results.push({ diskId:disk.id, diskName:disk.name, path:filePath.join(' / '), pathArr:nodePath, size:file.size/1024||0, files:null, isFile:true });
+        }
+      });
     }
     if (node.children) searchTree(node.children, query, disk, nodePath, results);
   });
@@ -1795,10 +1804,25 @@ async function pickFolder() {
 
   try {
     logLine('⟳ Починаємо сканування...');
-    const { tree, totalBytes } = await scanDir(dir, 0, logLine);
+    const { tree, totalBytes, filesList, fileCount } = await scanDir(dir, 0, logLine);
     const usedGB = Math.round(totalBytes/1024/1024/1024*100)/100;
     const d = S.disks[S.currentDisk];
-    d.tree = tree;
+
+    // якщо є файли в корені диска — додаємо їх як окремий вузол
+    let finalTree = tree;
+    if (filesList && filesList.length > 0) {
+      const rootNode = {
+        name: '📄 Файли в корені',
+        size: Math.round(filesList.reduce((s,f) => s + (f.size||0), 0) / 1024),
+        files: filesList.length,
+        items: filesList,
+        children: []
+      };
+      finalTree = [rootNode, ...tree];
+      logLine('ℹ Знайдено ' + filesList.length + ' файлів в корені диску');
+    }
+
+    d.tree = finalTree;
     d.used = usedGB;
     d.free = Math.max((d.capacity||0) - usedGB, 0);
     d.updatedAt = new Date().toISOString();
