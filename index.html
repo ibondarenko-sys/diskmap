@@ -679,6 +679,7 @@ body::before {
     <div class="header-sep"></div>
     <button class="header-search-btn" onclick="showSearch()" title="Пошук">⌕ <span class="header-search-label">Пошук</span></button>
     <div class="header-user"><div class="dot"></div><span id="header-username"></span></div>
+    <button class="header-btn" onclick="refreshAll()" title="Оновити дані">↻</button>
     <button class="header-btn" onclick="doLogout()">Вийти</button>
   </header>
   <div class="app-layout">
@@ -1099,6 +1100,20 @@ function pinShakeAndClear() {
     if (dot) { dot.classList.remove('filled'); dot.classList.add('error'); }
   }
   setTimeout(() => { _pin = ''; updatePinDisplay(); }, 600);
+}
+
+async function refreshAll() {
+  toast('Оновлення...', '');
+  await loadIndex();
+  // скидаємо кеш дисків щоб перезавантажити з Gist
+  S.disks = {};
+  if (S.currentDisk) {
+    renderDetail(S.currentDisk);
+  } else {
+    renderList();
+  }
+  updateSidebar();
+  toast('Оновлено', 'ok');
 }
 
 function doLogout() {
