@@ -1759,6 +1759,11 @@ async function createDisk() {
   const name = q('nd-name').value.trim();
   const cap = parseInt(q('nd-cap').value)||0;
   if (!name) { toast('Введи назву', 'err'); return; }
+
+  // блокуємо кнопку щоб не створити дубль
+  const btn = document.querySelector('#modal-add .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Створення...'; }
+
   const activeType = document.querySelector('.disk-type-btn.active');
   const diskType = activeType ? activeType.dataset.type : 'other';
   const id = 'disk-' + Date.now().toString(36);
@@ -1779,11 +1784,17 @@ async function createDisk() {
     }
     closeModal('modal-add');
     q('nd-name').value=''; q('nd-cap').value='';
-    // скидаємо тип на перший
     document.querySelectorAll('.disk-type-btn').forEach((b,i) => b.classList.toggle('active', i===0));
     toast('Диск додано', 'ok');
     showDisk(id);
-  } catch(e) { toast('Помилка: '+e.message, 'err'); }
+  } catch(e) {
+    toast('Помилка: '+e.message, 'err');
+    // видаляємо з пам'яті якщо не вдалось зберегти
+    delete S.index[id];
+    delete S.disks[id];
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Створити →'; }
+  }
 }
 
 async function confirmDelete(id) {
