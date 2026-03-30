@@ -2035,12 +2035,12 @@ function logomarkSVG(x, y, size) {
 }
 
 function buildQRSvg(url, diskName) {
-  // 50×50мм при 300 DPI = 591×591px
   const W = 591;
   const H = 591;
-  const pad = 28;
-  const labelH = 58; // зона назви знизу
-  const qrArea = H - pad * 2 - labelH; // квадратна зона для QR
+  const headerH = 52;
+  const pad = 26;
+  const labelH = 56;
+  const qrArea = H - headerH - pad * 2 - labelH;
 
   const qr = qrcode(0, 'H');
   qr.addData(url);
@@ -2049,16 +2049,19 @@ function buildQRSvg(url, diskName) {
   const count = qr.getModuleCount();
   const cell = Math.floor(qrArea / count);
   const qrActual = cell * count;
-  // центруємо QR горизонтально
   const qrX = Math.floor((W - qrActual) / 2);
-  const qrY = pad;
+  const qrY = headerH + pad;
   const moduleR = cell * 0.18;
-  const cr = 20; // corner radius всього лейблу
+  const cr = 20;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
   svg += `<rect width="${W}" height="${H}" rx="${cr}" fill="white"/>`;
 
-  // QR модулі
+  // POSTMEN PRODUCTION header
+  svg += `<text x="${W/2}" y="${Math.round(headerH*0.68)}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" letter-spacing="8" fill="#999">POSTMEN PRODUCTION</text>`;
+  svg += `<line x1="${pad}" y1="${headerH}" x2="${W-pad}" y2="${headerH}" stroke="#F0F0F0" stroke-width="1.5"/>`;
+
+  // QR modules
   for (let r = 0; r < count; r++) {
     for (let c = 0; c < count; c++) {
       if (qr.isDark(r, c)) {
@@ -2067,7 +2070,7 @@ function buildQRSvg(url, diskName) {
     }
   }
 
-  // логотип в центрі QR
+  // logo center
   const logoSize = Math.round(cell * 6.5);
   const logoX = Math.round((W - logoSize) / 2);
   const logoY = Math.round(qrY + (qrActual - logoSize) / 2);
@@ -2075,19 +2078,13 @@ function buildQRSvg(url, diskName) {
   svg += `<rect x="${logoX-buf}" y="${logoY-buf}" width="${logoSize+buf*2}" height="${logoSize+buf*2}" rx="${buf}" fill="white"/>`;
   svg += logomarkSVG(logoX, logoY, logoSize);
 
-  // розділювач
-  const divY = pad + qrActual + 14;
-  svg += `<line x1="${pad}" y1="${divY}" x2="${W-pad}" y2="${divY}" stroke="#E0E0E0" stroke-width="1.5"/>`;
-
-  // назва диска
+  // divider + disk name
+  const divY = qrY + qrActual + 12;
+  svg += `<line x1="${pad}" y1="${divY}" x2="${W-pad}" y2="${divY}" stroke="#F0F0F0" stroke-width="1.5"/>`;
   if (diskName) {
-    const maxFontSize = 28;
-    const minFontSize = 14;
-    const availW = W - pad * 2;
-    // підбираємо розмір шрифту
-    const fontSize = Math.max(minFontSize, Math.min(maxFontSize, Math.floor(availW / (diskName.length * 0.58 + 1))));
+    const fontSize = Math.max(14, Math.min(28, Math.floor((W - pad*2) / (diskName.length * 0.58 + 1))));
     const textY = divY + (H - divY + pad) / 2 + fontSize * 0.35;
-    svg += `<text x="${W/2}" y="${textY.toFixed(1)}" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing="0.5" fill="#0C0E14">${diskName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</text>`;
+    svg += `<text x="${W/2}" y="${textY.toFixed(1)}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing="0.5" fill="#0C0E14">${diskName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</text>`;
   }
 
   svg += `</svg>`;
