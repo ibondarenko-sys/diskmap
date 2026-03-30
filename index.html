@@ -604,6 +604,18 @@ body::before {
   line-height: 1.7; word-break: break-all; margin-top: 4px;
 }
 
+.qr-format-toggle {
+  display: flex; gap: 8px; margin-bottom: 14px;
+}
+.qr-fmt-btn {
+  flex: 1; padding: 7px 0; font-family: var(--mono); font-size: 11px;
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text2); border-radius: var(--r); cursor: pointer;
+  transition: all 0.15s;
+}
+.qr-fmt-btn:hover { border-color: var(--border2); }
+.qr-fmt-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
 /* Print */
 @media print {
   body * { visibility: hidden !important; }
@@ -892,6 +904,13 @@ body::before {
     <button class="modal-close" onclick="closeModal('modal-qr')">✕</button>
     <h3 id="qr-name">—</h3>
     <div class="modal-sub">Роздрукуй і наклей на диск</div>
+
+    <!-- format toggle -->
+    <div class="qr-format-toggle">
+      <button class="qr-fmt-btn active" id="fmt-square" onclick="setQRFormat('square')">⬛ 50×50мм</button>
+      <button class="qr-fmt-btn" id="fmt-rect" onclick="setQRFormat('rect')">▬ 50×30мм</button>
+    </div>
+
     <div class="qr-wrap"><img id="qr-img" style="width:220px;height:220px" alt="QR"></div>
     <div class="qr-url" id="qr-url"></div>
     <div class="modal-actions">
@@ -904,7 +923,7 @@ body::before {
       <div class="print-hint-steps">
         <div class="print-hint-step"><span class="phs-num">1</span>Підключи B21 по USB, встанови <a href="https://www.niimbot.com/enweb/software_download.html" target="_blank">Niimbot Desktop</a></div>
         <div class="print-hint-step"><span class="phs-num">2</span>Натисни "Друкувати" → у діалозі вибери принтер <strong>Niimbot B21</strong></div>
-        <div class="print-hint-step"><span class="phs-num">3</span>Paper size → <strong>50×50мм</strong> · Margins → <strong>None</strong></div>
+        <div class="print-hint-step"><span class="phs-num">3</span>Paper size → <strong id="hint-size">50×50мм</strong> · Margins → <strong>None</strong></div>
         <div class="print-hint-step"><span class="phs-num">4</span>More settings → вимкни <strong>Headers and footers</strong></div>
       </div>
     </div>
@@ -2100,22 +2119,119 @@ function buildQRSvg(url, diskName) {
   return svg;
 }
 
-function showQR(id) {
+let _qrFormat = 'square'; // 'square' | 'rect'
+let _qrDiskId = null;
+
+function setQRFormat(fmt) {
+  _qrFormat = fmt;
+  q('fmt-square').classList.toggle('active', fmt === 'square');
+  q('fmt-rect').classList.toggle('active', fmt === 'rect');
+  // оновлюємо підказку розміру
+  const hintSize = q('hint-size');
+  if (hintSize) hintSize.textContent = fmt === 'square' ? '50×50мм' : '50×30мм';
+  // перегенеровуємо QR
+  if (_qrDiskId) generateQR(_qrDiskId);
+}
+
+function buildQRSvgRect(url, diskName) {
+  // 50×30мм при 300 DPI = 591×354px
+  const W = 591;
+  const H = 354;
+  const pad = 20;
+  const qrSize = H - pad * 2;
+  const cr = 18;
+
+  const qr = qrcode(0, 'H');
+  qr.addData(url);
+  qr.make();
+
+  const count = qr.getModuleCount();
+  const cell = Math.floor(qrSize / count);
+  const qrActual = cell * count;
+  const qrX = pad;
+  const qrY = Math.floor((H - qrActual) / 2);
+  const moduleR = cell * 0.18;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+  svg += `<rect width="${W}" height="${H}" rx="${cr}" fill="white"/>`;
+
+  // QR modules
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (qr.isDark(r, c)) {
+        svg += `<rect x="${qrX+c*cell}" y="${qrY+r*cell}" width="${cell}" height="${cell}" rx="${moduleR}" fill="#0C0E14"/>`;
+      }
+    }
+  }
+
+  // logo center
+  const logoSize = Math.round(cell * 6);
+  const logoX = Math.round(qrX + (qrActual - logoSize) / 2);
+  const logoY = Math.round(qrY + (qrActual - logoSize) / 2);
+  const buf = 5;
+  svg += `<rect x="${logoX-buf}" y="${logoY-buf}" width="${logoSize+buf*2}" height="${logoSize+buf*2}" rx="${buf}" fill="white"/>`;
+  svg += logomarkSVG(logoX, logoY, logoSize);
+
+  // права частина
+  const divX = qrX + qrActual + 18;
+  const rx = divX + (W - divX) / 2;
+  const availW = W - divX - pad * 2;
+
+  if (diskName) {
+    const words = diskName.split(' ');
+    let line1, line2;
+    if (words.length >= 2) {
+      const mid = Math.ceil(words.length / 2);
+      line1 = words.slice(0, mid).join(' ');
+      line2 = words.slice(mid).join(' ');
+    } else {
+      line1 = diskName; line2 = '';
+    }
+    const fs1 = Math.max(24, Math.min(52, Math.floor(availW / (line1.length * 0.55 + 1))));
+    const fs2 = line2 ? Math.max(18, Math.min(36, Math.floor(availW / (line2.length * 0.52 + 1)))) : 0;
+    const totalH = fs1 + (line2 ? fs2 + 6 : 0);
+    const midY = H / 2 - 14;
+    const y1 = midY - totalH / 2 + fs1;
+    svg += `<text x="${rx}" y="${y1}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="${fs1}" font-weight="700" fill="#0C0E14">${line1.replace(/&/g,'&amp;')}</text>`;
+    if (line2) {
+      svg += `<text x="${rx}" y="${y1 + fs2 + 8}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="${fs2}" font-weight="300" fill="#aaa">${line2.replace(/&/g,'&amp;')}</text>`;
+    }
+  }
+
+  svg += `<text x="${rx}" y="${H - 18}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" letter-spacing="3" fill="#bbb">POSTMEN PRODUCTION</text>`;
+
+  svg += `</svg>`;
+  return svg;
+}
+
+function generateQR(id) {
   const entry = S.index[id] || {};
   const url = location.origin + location.pathname + '?disk=' + id;
   const diskName = entry.name || id;
-  q('qr-name').textContent = diskName;
-  q('qr-url').textContent = url;
-  openModal('modal-qr');
   try {
-    const svg = buildQRSvg(url, diskName);
+    const svg = _qrFormat === 'rect' ? buildQRSvgRect(url, diskName) : buildQRSvg(url, diskName);
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     const img = q('qr-img');
     img.src = dataUrl;
     img.style.width = '100%';
     img.style.height = 'auto';
     img._svgData = svg;
+    img._format = _qrFormat;
   } catch(e) { toast('QR помилка: ' + e.message, 'err'); }
+}
+
+function showQR(id) {
+  _qrDiskId = id;
+  _qrFormat = 'square';
+  q('fmt-square').classList.add('active');
+  q('fmt-rect').classList.remove('active');
+  const hintSize = q('hint-size');
+  if (hintSize) hintSize.textContent = '50×50мм';
+  const entry = S.index[id] || {};
+  q('qr-name').textContent = entry.name || id;
+  q('qr-url').textContent = location.origin + location.pathname + '?disk=' + id;
+  openModal('modal-qr');
+  generateQR(id);
 }
 
 function printQR() {
@@ -2123,50 +2239,36 @@ function printQR() {
   const svg = img._svgData;
   if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
 
-  // конвертуємо SVG → PNG → друкуємо
+  const isRect = _qrFormat === 'rect';
+  const pw = '50mm';
+  const ph = isRect ? '30mm' : '50mm';
+  const cw = 591;
+  const ch = isRect ? 354 : 591;
+
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const blobUrl = URL.createObjectURL(blob);
   const image = new Image();
   image.onload = function() {
     const canvas = document.createElement('canvas');
-    canvas.width = 591;
-    canvas.height = 591;
+    canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, 591, 591);
-    ctx.drawImage(image, 0, 0, 591, 591);
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.drawImage(image, 0, 0, cw, ch);
     URL.revokeObjectURL(blobUrl);
-
     const pngUrl = canvas.toDataURL('image/png');
-
-    // відкриваємо нове вікно тільки з QR
     const win = window.open('', '_blank', 'width=400,height=500');
-    win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  @page { size: 50mm 50mm; margin: 0; }
-  body { width: 50mm; height: 50mm; }
-  img { width: 50mm; height: 50mm; display: block; }
-</style>
-</head>
-<body>
-<img src="${pngUrl}"/>
-<script>
-  window.onload = function() {
-    window.print();
-    setTimeout(function() { window.close(); }, 500);
-  };
-<\/script>
-</body>
-</html>`);
+    win.document.write(`<!DOCTYPE html><html><head><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  @page { size: ${pw} ${ph}; margin: 0; }
+  body { width:${pw}; height:${ph}; }
+  img { width:${pw}; height:${ph}; display:block; }
+</style></head><body><img src="${pngUrl}"/>
+<script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);};<\/script>
+</body></html>`);
     win.document.close();
   };
-  image.onerror = () => {
-    URL.revokeObjectURL(blobUrl);
-    toast('Помилка генерації', 'err');
-  };
+  image.onerror = () => { URL.revokeObjectURL(blobUrl); toast('Помилка генерації', 'err'); };
   image.src = blobUrl;
 }
 
