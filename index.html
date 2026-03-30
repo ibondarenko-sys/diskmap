@@ -2070,7 +2070,6 @@ function buildQRSvg(url, diskName) {
 
   // POSTMEN PRODUCTION header
   svg += `<text x="${W/2}" y="${Math.round(headerH*0.68)}" text-anchor="middle" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" letter-spacing="8" fill="#999">POSTMEN PRODUCTION</text>`;
-  svg += `<line x1="${pad}" y1="${headerH}" x2="${W-pad}" y2="${headerH}" stroke="#F0F0F0" stroke-width="1.5"/>`;
 
   // QR modules
   for (let r = 0; r < count; r++) {
@@ -2089,9 +2088,8 @@ function buildQRSvg(url, diskName) {
   svg += `<rect x="${logoX-buf}" y="${logoY-buf}" width="${logoSize+buf*2}" height="${logoSize+buf*2}" rx="${buf}" fill="white"/>`;
   svg += logomarkSVG(logoX, logoY, logoSize);
 
-  // divider + disk name
+  // disk name
   const divY = qrY + qrActual + 12;
-  svg += `<line x1="${pad}" y1="${divY}" x2="${W-pad}" y2="${divY}" stroke="#F0F0F0" stroke-width="1.5"/>`;
   if (diskName) {
     const fontSize = Math.max(14, Math.min(28, Math.floor((W - pad*2) / (diskName.length * 0.58 + 1))));
     const textY = divY + (H - divY + pad) / 2 + fontSize * 0.35;
