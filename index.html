@@ -604,6 +604,48 @@ body::before {
   line-height: 1.7; word-break: break-all; margin-top: 4px;
 }
 
+/* Print */
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area {
+    position: fixed !important;
+    left: 0 !important; top: 0 !important;
+    width: 50mm !important; height: 50mm !important;
+    margin: 0 !important; padding: 0 !important;
+    border: none !important;
+  }
+  @page {
+    size: 50mm 50mm;
+    margin: 0;
+  }
+}
+
+.print-hint {
+  margin-top: 16px; padding: 12px 14px;
+  background: var(--bg2); border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+.print-hint-title {
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;
+}
+.print-hint-steps { display: flex; flex-direction: column; gap: 7px; }
+.print-hint-step {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11px; color: var(--text2); line-height: 1.5;
+}
+.phs-num {
+  flex-shrink: 0; width: 16px; height: 16px;
+  background: var(--surface2); border-radius: 50%;
+  font-size: 9px; font-weight: 700; color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 1px;
+}
+.print-hint-step a { color: var(--accent); text-decoration: none; }
+.print-hint-step a:hover { text-decoration: underline; }
+.print-hint-step strong { color: var(--text); }
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -852,18 +894,19 @@ body::before {
     <div class="modal-sub">Роздрукуй і наклей на диск</div>
     <div class="qr-wrap"><img id="qr-img" style="width:220px;height:220px" alt="QR"></div>
     <div class="qr-url" id="qr-url"></div>
-    <div class="field" style="margin-bottom:16px">
-      <label>Розмір наліпки</label>
-      <select id="qr-size-select" style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 12px;font-family:var(--mono);font-size:12px;border-radius:var(--r);outline:none">
-        <option value="4">4 × 4 см (маленька)</option>
-        <option value="6" selected>6 × 6 см (стандарт)</option>
-        <option value="8">8 × 8 см (велика)</option>
-        <option value="10">10 × 10 см (дуже велика)</option>
-      </select>
-    </div>
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="downloadQR()">↓ Завантажити PNG</button>
+      <button class="btn btn-primary" onclick="printQR()">🖨 Друкувати</button>
+      <button class="btn btn-ghost" onclick="downloadQR()">↓ PNG</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-qr')">Закрити</button>
+    </div>
+    <div class="print-hint">
+      <div class="print-hint-title">Як друкувати на Niimbot B21</div>
+      <div class="print-hint-steps">
+        <div class="print-hint-step"><span class="phs-num">1</span>Підключи B21 по USB, встанови <a href="https://www.niimbot.com/enweb/software_download.html" target="_blank">Niimbot Desktop</a></div>
+        <div class="print-hint-step"><span class="phs-num">2</span>Натисни "Друкувати" → у діалозі вибери принтер <strong>Niimbot B21</strong></div>
+        <div class="print-hint-step"><span class="phs-num">3</span>Paper size → <strong>50×50мм</strong> · Margins → <strong>None</strong></div>
+        <div class="print-hint-step"><span class="phs-num">4</span>More settings → вимкни <strong>Headers and footers</strong></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1973,67 +2016,78 @@ async function scanDir(handle, depth, logFn) {
 // Postmen logo embedded
 // Postmen logomark — перемальований векторно
 // Квадрат з діагональними смугами (чорний на жовтому)
-function drawLogomark(cx, cy, size) {
-  const s = size;
-  const x = cx - s/2;
-  const y = cy - s/2;
-  const r = s * 0.08; // закруглення кутів квадрата
-  const stripeW = s * 0.18; // ширина жовтої смуги
+function logomarkSVG(x, y, size) {
+  // Точний логотип Postmen — масштабований з оригінального SVG 1366x1366
+  // x,y — верхній лівий кут, size — розмір квадрата
+  const s = size / 100; // scale factor
+  const r = size * 0.06;
   const id = 'lm_' + Math.random().toString(36).slice(2);
-
-  // Зовнішній квадрат з заокругленими кутами (clip)
-  let out = `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${r}"/></clipPath>`;
-
-  // Жовтий фон
-  out += `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${r}" fill="#FBE930"/>`;
-
-  // Чорна діагональна область (весь квадрат чорний, потім вирізаємо смуги)
-  out += `<g clip-path="url(#${id})">`;
-  out += `<rect x="${x}" y="${y}" width="${s}" height="${s}" fill="#0C0E14"/>`;
-
-  // 3 жовті діагональні смуги зліва-вниз направо-вгору
-  const diag = s * 2.2;
-  const offsets = [-s*0.28, s*0.14, s*0.56];
-  offsets.forEach(off => {
-    // смуга як паралелограм через transform
-    out += `<rect x="${x + off}" y="${y - s*0.1}" width="${stripeW}" height="${diag}" fill="#FBE930" transform="rotate(-45 ${cx} ${cy})"/>`;
-  });
-
-  out += `</g>`;
-  return out;
+  const p = (pts) => pts.map(([px,py]) => `${(px*s+x).toFixed(2)},${(py*s+y).toFixed(2)}`).join(' ');
+  return `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${r}"/></clipPath>` +
+    `<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${r}" fill="white"/>` +
+    `<g clip-path="url(#${id})" fill="#0C0E14">` +
+      `<polygon points="${p([[0,0],[26.50,0],[0,26.50]])}"/>` +
+      `<polygon points="${p([[0,43.48],[43.48,0],[70.94,0],[0,70.94]])}"/>` +
+      `<polygon points="${p([[0,86.75],[86.75,0],[99.93,0],[99.93,14.28],[14.28,99.93],[0,99.93]])}"/>` +
+      `<polygon points="${p([[99.93,30.16],[99.93,57.54],[57.54,99.93],[30.16,99.93]])}"/>` +
+      `<polygon points="${p([[99.93,73.43],[99.93,99.93],[73.43,99.93]])}"/>` +
+    `</g>`;
 }
 
 function buildQRSvg(url, diskName) {
+  // 50×50мм при 300 DPI = 591×591px
+  const W = 591;
+  const H = 591;
+  const pad = 28;
+  const labelH = 58; // зона назви знизу
+  const qrArea = H - pad * 2 - labelH; // квадратна зона для QR
+
   const qr = qrcode(0, 'H');
   qr.addData(url);
   qr.make();
 
   const count = qr.getModuleCount();
-  const cell = 9;
+  const cell = Math.floor(qrArea / count);
   const qrActual = cell * count;
-  const pad = 20;
-  const totalW = qrActual + pad * 2;
-  const totalH = totalW;
-  const cr = 14; // corner radius всього QR
-
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">`;
-
-  // білий фон з заокругленими кутами
-  svg += `<rect width="${totalW}" height="${totalH}" rx="${cr}" fill="white"/>`;
-
-  // QR модулі з заокругленими кутами
-  const qrX = pad;
+  // центруємо QR горизонтально
+  const qrX = Math.floor((W - qrActual) / 2);
   const qrY = pad;
-  const moduleR = cell * 0.2; // закруглення кожного модуля
+  const moduleR = cell * 0.18;
+  const cr = 20; // corner radius всього лейблу
 
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+  svg += `<rect width="${W}" height="${H}" rx="${cr}" fill="white"/>`;
+
+  // QR модулі
   for (let r = 0; r < count; r++) {
     for (let c = 0; c < count; c++) {
       if (qr.isDark(r, c)) {
-        const mx = qrX + c * cell;
-        const my = qrY + r * cell;
-        svg += `<rect x="${mx}" y="${my}" width="${cell}" height="${cell}" rx="${moduleR}" fill="#0C0E14"/>`;
+        svg += `<rect x="${qrX+c*cell}" y="${qrY+r*cell}" width="${cell}" height="${cell}" rx="${moduleR}" fill="#0C0E14"/>`;
       }
     }
+  }
+
+  // логотип в центрі QR
+  const logoSize = Math.round(cell * 6.5);
+  const logoX = Math.round((W - logoSize) / 2);
+  const logoY = Math.round(qrY + (qrActual - logoSize) / 2);
+  const buf = 6;
+  svg += `<rect x="${logoX-buf}" y="${logoY-buf}" width="${logoSize+buf*2}" height="${logoSize+buf*2}" rx="${buf}" fill="white"/>`;
+  svg += logomarkSVG(logoX, logoY, logoSize);
+
+  // розділювач
+  const divY = pad + qrActual + 14;
+  svg += `<line x1="${pad}" y1="${divY}" x2="${W-pad}" y2="${divY}" stroke="#E0E0E0" stroke-width="1.5"/>`;
+
+  // назва диска
+  if (diskName) {
+    const maxFontSize = 28;
+    const minFontSize = 14;
+    const availW = W - pad * 2;
+    // підбираємо розмір шрифту
+    const fontSize = Math.max(minFontSize, Math.min(maxFontSize, Math.floor(availW / (diskName.length * 0.58 + 1))));
+    const textY = divY + (H - divY + pad) / 2 + fontSize * 0.35;
+    svg += `<text x="${W/2}" y="${textY.toFixed(1)}" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing="0.5" fill="#0C0E14">${diskName.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</text>`;
   }
 
   svg += `</svg>`;
@@ -2058,60 +2112,95 @@ function showQR(id) {
   } catch(e) { toast('QR помилка: ' + e.message, 'err'); }
 }
 
-function downloadQR() {
+function printQR() {
   const img = q('qr-img');
   const svg = img._svgData;
   if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
 
-  const entry = S.index[S.currentDisk] || {};
-  const fname = 'qr-' + (entry.name||'disk').replace(/\s+/g,'_');
-
-  // розмір в см → пікселі при 300 DPI (1 см = 118.11 px при 300 DPI)
-  const sizeSelect = q('qr-size-select');
-  const cm = parseFloat(sizeSelect?.value || 6);
-  const px = Math.round(cm * 118.11);
-
-  toast('Генерую PNG ' + cm + '×' + cm + ' см...', '');
-
+  // конвертуємо SVG → PNG → друкуємо
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const blobUrl = URL.createObjectURL(blob);
   const image = new Image();
-
   image.onload = function() {
     const canvas = document.createElement('canvas');
-    canvas.width = px;
-    canvas.height = px;
+    canvas.width = 591;
+    canvas.height = 591;
     const ctx = canvas.getContext('2d');
-
-    // білий фон
     ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, px, px);
-
-    // малюємо SVG масштабованим до потрібного розміру
-    ctx.drawImage(image, 0, 0, px, px);
-
+    ctx.fillRect(0, 0, 591, 591);
+    ctx.drawImage(image, 0, 0, 591, 591);
     URL.revokeObjectURL(blobUrl);
 
-    canvas.toBlob(function(pngBlob) {
+    const pngUrl = canvas.toDataURL('image/png');
+
+    // відкриваємо нове вікно тільки з QR
+    const win = window.open('', '_blank', 'width=400,height=500');
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: 50mm 50mm; margin: 0; }
+  body { width: 50mm; height: 50mm; }
+  img { width: 50mm; height: 50mm; display: block; }
+</style>
+</head>
+<body>
+<img src="${pngUrl}"/>
+<script>
+  window.onload = function() {
+    window.print();
+    setTimeout(function() { window.close(); }, 500);
+  };
+<\/script>
+</body>
+</html>`);
+    win.document.close();
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(blobUrl);
+    toast('Помилка генерації', 'err');
+  };
+  image.src = blobUrl;
+}
+
+function downloadQR() {
+  const img = q('qr-img');
+  const svg = img._svgData;
+  if (!svg) { toast('QR ще не згенеровано', 'err'); return; }
+  const entry = S.index[S.currentDisk] || {};
+  const fname = 'qr-' + (entry.name||'disk').replace(/\s+/g,'_') + '_50x50mm.png';
+
+  toast('Генерую PNG...', '');
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const blobUrl = URL.createObjectURL(blob);
+  const image = new Image();
+  image.onload = function() {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || 591;
+    canvas.height = image.naturalHeight || 591;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0);
+    URL.revokeObjectURL(blobUrl);
+    canvas.toBlob(pngBlob => {
       const a = document.createElement('a');
-      a.download = fname + '_' + cm + 'cm.png';
+      a.download = fname;
       a.href = URL.createObjectURL(pngBlob);
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      toast('PNG збережено (' + cm + '×' + cm + ' см, 300 DPI)', 'ok');
+      toast('PNG збережено (591×591px · 50×50мм при 300 DPI)', 'ok');
     }, 'image/png');
   };
-
-  image.onerror = function() {
+  image.onerror = () => {
     URL.revokeObjectURL(blobUrl);
-    // fallback — SVG
     const a = document.createElement('a');
-    a.download = fname + '.svg';
+    a.download = fname.replace('.png', '.svg');
     a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     a.click();
     toast('Збережено як SVG', '');
   };
-
   image.src = blobUrl;
 }
 
